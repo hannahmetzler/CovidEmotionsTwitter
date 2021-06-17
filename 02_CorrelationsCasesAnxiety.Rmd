@@ -214,8 +214,6 @@ wdf1 = wdf %>%
 * All correlations are Spearman-rank correlations. 
 
 
-
-
 ## Anxiety of emotions with 5 week average of confirmed cases
 
 We calculate the case average across the whole 5 week period, and correlate it with baseline corrected anxiety in that week. 
