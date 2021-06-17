@@ -214,7 +214,7 @@ ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-
 ```
 
 
-# Time series of total tweets and followers
+# Time series of total tweets and unique authors 
 
 ```{r, total tweets, fig.height=8, fig.width=7}
 #colours
