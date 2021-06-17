@@ -13,7 +13,7 @@ Preprint here: https://psyarxiv.com/qejxv/
     - Country comparison figure: average emotion levels in the 5 weeks after the outbreak in each country
     - the main analysis: linear mixed effects regressions analysing the changes in emotions per week after the outbreak, first with regressions comparing each period to the baseline, then with regressions comparing each period to the previous period
     - the figure of sustained emotion periods above/below the baseline (duration of emotional changes)
-Continue in the order in which scripts are numbered, all other .Rmd files contain exactly the analysis indicated by their name. 
+* Continue in the order in which scripts are numbered, all other .Rmd files contain exactly the analysis indicated by their name. 
 
 **Structure of folders:**
 
