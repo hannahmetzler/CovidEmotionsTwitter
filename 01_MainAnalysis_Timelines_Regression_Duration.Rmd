@@ -194,6 +194,10 @@ write.csv2(p_period, "output/TableS2_percentage_period.csv", row.names=F)
 In Latin America, cases only start to increase later than in Europe and North America. 
 
 ```{r, cases in all countries}
+
+#colours
+colscountries = c(brewer.pal(11, "PRGn")[c(1:4,8:11)], brewer.pal(11, "RdYlBu")[c(1:5,8,10,11)], brewer.pal(11, "PiYG")[c(2,4)])
+
 #per continent colour, log scale
 ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-15")), 
        aes(x = date, y =log(confirmed),  group=country, colour=continent)) +
@@ -201,7 +205,8 @@ ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-
     theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=labelsize), legend.title=element_blank(),
                     legend.position="right")+
   ylab("Confirmed cases (log)") + xlab("")+
-  scale_color_viridis(discrete=T)+ggtitle("Cases on log scale - all countries")
+   scale_colour_manual(values=colscountries)+
+  ggtitle("Cases on log scale - all countries")
 
 #per country colour, without the US
 ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-15") & country2!="USA"), 
@@ -210,7 +215,7 @@ ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-
     theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=labelsize), legend.title=element_blank(),
                     legend.position="right")+
   ylab("Confirmed cases") + xlab("")+ggtitle("Cases on natural scale - all countries except the US")+
-   scale_color_viridis(discrete=T)
+    scale_colour_manual(values=colscountries)
 ```
 
 
