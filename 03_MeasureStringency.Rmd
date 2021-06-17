@@ -20,6 +20,7 @@ library(viridis)
 #for comparing time periods based on stringency
 library(lme4)#linear mixed effect models
 library(lmerTest) #for t-tests and p-values for parameter estimates
+library(broom.mixed)
 
 #language English
 Sys.setlocale("LC_TIME", 'en_US.UTF-8')
@@ -268,11 +269,6 @@ ggsave('figures/stringency_periods_emotion_boxplots_withexamplecountry.pdf', wid
 
 ```{r, results=F}
 #define repeated contrasts (backward difference contrast): compare each period to the previous one
-# Period: control vs. pre | pre vs increase | increase vs post
-# control     -3/4           -2/4                   -1/4 
-# pre         1/4            -2/4                   -1/4 
-# increase    1/4             2/4                   -1/4 
-# post        1/4             2/4                   3/4 
 repcontrasts <- as.data.frame(matrix(data = c(-3/4, 1/4, 1/4, 1/4,  -2/4,-2/4, 2/4, 2/4, -1/4,-1/4,-1/4, 3/4) , nrow =4, ncol=3))
 names(repcontrasts) <- c("control-pre", "pre-increase", "increase-post")
 contrasts(ds_means$s_period) <- as.matrix(repcontrasts)
@@ -286,6 +282,30 @@ m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
 summary(m)
 confint(m)[3:6,]
 # REML = FALSE is needed when model comparison is used to determine p-values (determines how variances are calculated)
+
+# table with coefficients
+plotdf <- as.data.frame(tidy(m))[2:4,] %>%
+  rename(period = term,
+         coefficient = estimate,
+         t = statistic,
+         p = p.value) %>%
+  select(period, coefficient, t, p) %>%
+  mutate(period = factor(period, labels = c("control vs. before", "before vs. increase", "increase vs. after")))
+ 
+plotdf$cilow <-confint(m)[4:6,1]
+plotdf$cihigh <- confint(m)[4:6,2]
+
+coef <- ggplot(data=plotdf, aes(x=period, y=coefficient), position=position_dodge(width=1)) + 
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="orange" ) +
+  geom_bar(stat="identity", colour="orange", fill=scales::alpha("orange", 0.2)) + 
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Anxiety coefficient")
+
+(coef)
+
+
 ```
 
 
@@ -306,6 +326,29 @@ df = filter(ds_means, wordlist=="Sadness")
 m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
 summary(m)
 confint(m)[3:6,]
+
+# table with coefficients 
+plotdf <- as.data.frame(tidy(m))[2:4,] %>%
+  rename(period = term,
+         coefficient = estimate,
+         t = statistic,
+         p = p.value) %>%
+  select(period, coefficient, t, p) %>%
+  mutate(period = factor(period, labels = c("control vs. before", "before vs. increase", "increase vs. after")))
+ 
+plotdf$cilow <-confint(m)[4:6,1]
+plotdf$cihigh <- confint(m)[4:6,2]
+
+coef <- ggplot(data=plotdf, aes(x=period, y=coefficient), position=position_dodge(width=1)) + 
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="blue" ) +
+  geom_bar(stat="identity", colour="blue", fill=scales::alpha("blue", 0.2)) + 
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Sadness coefficient")
+
+(coef)
+
 ```
 
 
@@ -316,6 +359,28 @@ df = filter(ds_means, wordlist=="Anger")
 m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
 summary(m)
 confint(m)[3:6,]
+
+# table with coefficients
+plotdf <- as.data.frame(tidy(m))[2:4,] %>%
+  rename(period = term,
+         coefficient = estimate,
+         t = statistic,
+         p = p.value) %>%
+  select(period, coefficient, t, p) %>%
+  mutate(period = factor(period, labels = c("control vs. before", "before vs. increase", "increase vs. after")))
+ 
+plotdf$cilow <-confint(m)[4:6,1]
+plotdf$cihigh <- confint(m)[4:6,2]
+
+coef <- ggplot(data=plotdf, aes(x=period, y=coefficient), position=position_dodge(width=1)) + 
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="red" ) +
+  geom_bar(stat="identity", colour="red", fill=scales::alpha("red", 0.2)) + 
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Anger coefficient")
+
+(coef)
 ```
 
 
@@ -326,6 +391,28 @@ df = filter(ds_means, wordlist=="Positive")
 m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
 summary(m)
 confint(m)[3:6,]
+
+# table with coefficients
+plotdf <- as.data.frame(tidy(m))[2:4,] %>%
+  rename(period = term,
+         coefficient = estimate,
+         t = statistic,
+         p = p.value) %>%
+  select(period, coefficient, t, p) %>%
+  mutate(period = factor(period, labels = c("control vs. before", "before vs. increase", "increase vs. after")))
+ 
+plotdf$cilow <-confint(m)[4:6,1]
+plotdf$cihigh <- confint(m)[4:6,2]
+
+coef <- ggplot(data=plotdf, aes(x=period, y=coefficient), position=position_dodge(width=1)) + 
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="cyan" ) +
+  geom_bar(stat="identity", colour="cyan", fill=scales::alpha("cyan", 0.2)) + 
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Positive emotions coefficient")
+
+(coef)
 ```
 
 ## Strigency median per week after outbreak
