@@ -1,3 +1,4 @@
+#This script processes raw data that is not uploaded into this repository. 
 library(dplyr)
 
 df <- read.table("USroberta.dat", stringsAsFactors=F, colClasses=c("character","character", rep("numeric", 11)), header=T)
