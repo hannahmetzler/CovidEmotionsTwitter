@@ -1,0 +1,395 @@
+---
+title: "Correlations of Cases and Anxiety"
+author: "Hannah Metzler & David Garcia"
+output: 
+  pdf_document:
+    toc_depth: 2
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, results=T, comment=NA)
+```
+
+```{r, libraries, results='hide', include=FALSE}
+library(tidyverse)
+library(scales)
+library(psych) #for correlation tests
+library(cowplot) #for figures
+library(ggrepel)#for overlapping labels in figures
+library(viridis)#for colours
+
+Sys.setlocale("LC_TIME", 'en_US.UTF-8')
+options(scipen=10)
+
+#functions for data processing, plotting, and settings
+source("scripts/functions_figure_settings.R")
+```
+
+```{r, load and prepare data, results=FALSE, cache=TRUE}
+all <- read.csv("data_main/CountriesData.csv") %>% #full data from all countries per day, with cases etc
+  mutate(date = as.Date(date), 
+         outbreak_date = as.Date(outbreak_date), 
+         social_distancing_start = as.Date(social_distancing_start)) %>% 
+  filter(!country %in% c("bel", "chefrench")) %>%  #exclude countries where dictionaries have not been cleaned before data processing
+  droplevels() %>% 
+  mutate(country2 = recode(country2, "NewZealand" = "New Zealand", "BelgiumDutch"="Belgium", "CanadaEnglish"="Canada"), 
+         country = toupper(recode(country,  "net" ="NLD", "ger"="DEU", "ire" ="IRL", "uk" = "GBR", "beldutch" = "BEL")))
+
+# import total population data dp
+dp0 = read.csv("data_main/WPP2019_TotalPopulationBySex_selectedcountries.csv", header=F)
+#column names from original file  
+names(dp0) = c("LocID","Location","VarID","Variant","Time","MidPeriod","PopMale","PopFemale","PopTotal","PopDensity")
+# unique(dp0$Location)
+#drop unncessary levels of variable country
+dp = dp0 %>% 
+  filter(Time == "2020") %>% 
+  filter(!Location %in% c("France (and dependencies)", "New Zealand (and dependencies)", "United Kingdom (and dependencies)", "United States of America (and dependencies)", "Oceania (excluding Australia and New Zealand)", "Netherlands (and dependencies)", "Australia/New Zealand")) %>% 
+  droplevels() %>% 
+  select(Location, PopTotal) %>% 
+  group_by(Location) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  # rename countries to our names 
+  rename(country2 = Location) %>% 
+  mutate(country2 = recode(country2, "United Kingdom" = "UK", "United States of America"="USA")) %>% 
+  #transform to million (currently 100.000)
+  mutate(PopTotal = PopTotal*1000)
+```
+
+```{r, prepare the 5 week means datasets, results = F, cache=TRUE}
+# Prepare the 5 weeks average dataset
+
+#load dataset with 5 week means since day with 30 cases 
+outbr <- read.csv("data_main/Outbreak-30-Levels.csv") %>% 
+  mutate(country2 = dplyr::recode(country, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand"))
+
+#calculate mean cases within 30 days after outbreak
+meancases = all %>% 
+  group_by(country2) %>% 
+  filter(confirmed >= 30) %>% 
+  slice(1:140) %>% #next five weeks: 5*7 times 4 emotions
+  summarise(confirmed.mean = round(mean(confirmed)))
+seldf = NULL
+#calculate baseline corrected percent, and CI around it
+f <- outbr$wordlist=="anxiety"
+seldf <- data.frame(country2=outbr$country2[f],
+                    anx = 100*(outbr$pr[f]-outbr$bl[f])/outbr$bl[f],
+                    anx_low = 100*(outbr$low[f]-outbr$bl[f])/outbr$bl[f],
+                    anx_high = 100*(outbr$high[f]-outbr$bl[f])/outbr$bl[f])
+
+f <- outbr$wordlist=="sadness"
+seldf <- cbind(seldf, data.frame(sad = 100*(outbr$pr[f]-outbr$bl[f])/outbr$bl[f],
+                                 sad_low = 100*(outbr$low[f]-outbr$bl[f])/outbr$bl[f],
+                                 sad_high = 100*(outbr$high[f]-outbr$bl[f])/outbr$bl[f]))
+f <- outbr$wordlist=="anger"
+seldf<- cbind(seldf, data.frame(ang = 100*(outbr$pr[f]-outbr$bl[f])/outbr$bl[f],
+                                ang_low = 100*(outbr$low[f]-outbr$bl[f])/outbr$bl[f],
+                                ang_high = 100*(outbr$high[f]-outbr$bl[f])/outbr$bl[f]))
+f <- outbr$wordlist=="positive"
+seldf <- cbind(seldf, data.frame(pos = 100*(outbr$pr[f]-outbr$bl[f])/outbr$bl[f],
+                                 pos_low = 100*(outbr$low[f]-outbr$bl[f])/outbr$bl[f],
+                                 pos_high = 100*(outbr$high[f]-outbr$bl[f])/outbr$bl[f]))
+
+#add 5 week means of cases per capita to the seldf data frame
+seldf <- seldf %>%
+  inner_join(meancases, by="country2") %>% 
+  #add total population
+  inner_join(dp) %>% 
+  #per capita: cases per million: popTotal is indicated in million
+  mutate(confirmed.mean.pc = confirmed.mean/PopTotal*1000000) %>% 
+  mutate(country2 = dplyr::recode(country2, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand"), 
+         language = dplyr::recode(country2, Austria = "German", Germany = "German", Switzerland = "German",
+                                  Italy = "Italian", France = "French", 
+                                  Spain = "Spanish", Chile= "Spanish", Ecuador= "Spanish", Peru= "Spanish", Mexico = "Spanish",
+                                  Belgium="Dutch", Netherlands="Dutch", 
+                                  "UK" ="English", USA="English", Canada="English", Ireland="English", Australia="English", "New Zealand" ="English"), 
+         continent = dplyr::recode(country2, Austria = "Europe", Germany = "Europe", Switzerland = "Europe",
+                                   Italy = "Europe",  France = "Europe", Spain = "Europe", 
+                                   Belgium="Europe", Netherlands="Europe", "UK" ="Europe", Ireland="Europe",
+                                   USA="North America", Canada="North America", 
+                                   Australia="Australia", "New Zealand" ="Australia", 
+                                   Chile= "South America", Ecuador= "South America", Peru= "South America", Mexico = "South America"))
+```
+
+```{r, calculate difference to previous week, cache=TRUE}
+#load data with average emotions per week: week data frame
+wdf = read.csv("data_main/AfterOutbreak-Weeks-5.csv") %>% 
+  #calculate percentage per period
+  mutate(pr = 100*emo_n/tot_n) %>% 
+  #rename country to country2
+  rename(country2=country) %>% 
+  mutate(country2 = dplyr::recode(country2, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand"))
+
+#calculate relative change for each week, include 1 week before the date of the outbreak for this (week 0 to 5) ####
+allweeks = all %>% 
+  filter(date >= outbreak_date-7) %>%  #start with date one week before the outbreak
+  #week 0 to 5
+  mutate(outbreak_week = case_when(
+    date < outbreak_date ~ 0, 
+    date < outbreak_date+7 ~ 1,  
+    date < outbreak_date+2*7 ~ 2,
+    date < outbreak_date+3*7 ~ 3,
+    date < outbreak_date+4*7 ~ 4,
+    date < outbreak_date+5*7 ~ 5)) %>% 
+  ungroup() %>% 
+  relocate(outbreak_week, .after="outbreak_date") %>% 
+  #drop the lines with empty week column (after week 5)
+  filter(is.na(outbreak_week)==FALSE) %>% 
+  filter(wordlist=="anxiety") %>% #cases are the same in each emotion line
+  group_by(country2, outbreak_week) %>% 
+  slice(1) %>% #only the first line for each week
+  #change column order
+  relocate(c(confirmed), .after=outbreak_week) %>% 
+  #drop uninformative variables
+  select(c(country2, country, date, outbreak_week, confirmed, outbreak_date)) %>% 
+  #cases per capita, add the dp dataframe and correct per million
+  inner_join(dp) %>%
+  mutate(confirmed = confirmed/PopTotal*1000000)
+
+
+#calculate the relative difference to the previous week, use the previous week as a baseline for this
+#make a column for the baseline by moving cases down one line, so you later divide week 5 by cases of week 4
+prevweek <- NULL
+countries <- levels(all$country2)
+
+for (countryname in countries)
+{
+  allweeks %>% 
+    filter(country2==countryname) -> df
+  #move values one line down in the previous week column
+  df$confirmed.pre = c(NA, df$confirmed[1:(nrow(df)-1)])
+  #add each country to an all country df
+  prevweek = rbind(prevweek, df)
+}
+
+#calculate the absolute change per country 
+diffdf = prevweek %>% 
+  group_by(country2) %>% 
+  # absolute change
+  mutate(confirmed.absdiff=  (confirmed-confirmed.pre)) %>%
+  #remove NAs in the first line in each country, that corresponded to week 0 (the first baseline,for which no change value exists)
+  filter(!outbreak_week==0) %>% 
+  mutate(#create a factor with the week number, to match with period in the wdf with the emotions
+    period = as.factor(paste("Week", outbreak_week))) %>% 
+  select(-outbreak_week) %>% 
+  ungroup() 
+
+#emotion baseline for each emotion/country (the same for all weeks, because we are not looking at daily changes here)
+emobl = wdf %>% 
+  filter(period=="baseline") %>%
+  #rename the emotion pr score in the baseline period to bl
+  rename(bl = pr) %>% 
+  select(c(country2, wordlist, bl))
+
+#add the cases and the emotion baseline to the dataframe with level per week for 5 weeks after outbreak:
+wdf1 = wdf %>% 
+  inner_join(diffdf) %>% 
+  #add emotion baseline in percent
+  inner_join(emobl, by=c("country2", "wordlist")) %>% 
+  arrange(country2) %>% 
+  #make a factor for language and continent
+  mutate(
+    language = dplyr::recode(country2, Austria = "German", Germany = "German", Switzerland = "German",
+                             Italy = "Italian", France = "French", 
+                             Spain = "Spanish", Chile= "Spanish", Ecuador= "Spanish", Peru= "Spanish", Mexico = "Spanish",
+                             Belgium="Dutch", Netherlands="Dutch", 
+                             "UK" ="English", USA="English", Canada="English", Ireland="English", Australia="English", "New Zealand" ="English"), 
+    continent = dplyr::recode(country2, Austria = "Europe", Germany = "Europe", Switzerland = "Europe",
+                              Italy = "Europe",  France = "Europe", Spain = "Europe", 
+                              Belgium="Europe", Netherlands="Europe", "UK" ="Europe", Ireland="Europe",
+                              USA="North America", Canada="North America", 
+                              Australia="Australia", "New Zealand" ="Australia", 
+                              Chile= "South America", Ecuador= "South America", Peru= "South America", Mexico = "South America"))
+```
+
+# Correlations with cases across countries
+
+**Metrics we use:**
+
+* For 5 week averages: Mean number of cases per million inhabitants and mean baseline corrected emotion across 5 weeks after outbreak
+* For weekly correlations: 
+* Change in cases per million compared to previous week for weekly anxiety correlations
+* Emotion levels relative to baseline ((percent - baseline)/baseline): We are correcting for baseline anxiety, rather then the level in the previous week, because there are other differences in the language itself, not just the differences induced by events (like cases etc). We remove methodological differences. This is necessary to compare across languages, because some languages simply have more positive/anxious/sad/angry words (e.g. Spanish has more positive words) than others, and LIWC might also contain different numbers of words per emotion in each language.
+* All correlations are Spearman-rank correlations. 
+
+
+
+
+## Anxiety of emotions with 5 week average of confirmed cases
+
+We calculate the case average across the whole 5 week period, and correlate it with baseline corrected anxiety in that week. 
+Note: because these correlations do not take time into account, the results are similar for confirmed cases, active cases, and recovered cases, since these all strongly correlate with each other across countries. We therefore present only correlations with confirmed cases. 
+
+**Hypothesis**: Anxiety should be higher in countries with more confirmed cases.
+
+```{r,corr_anx_confirmedcases, fig.width=6, fig.height=4, warning=FALSE, cache=TRUE, results=TRUE}
+#anx with confirmed cases
+anxconf = ggplot(data = seldf, aes(x = confirmed.mean.pc, colour=language, y =anx, label=country2)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(aes(colour=language), size=2)  +
+  geom_text_repel(show.legend=F)+
+  geom_errorbar(aes(ymin =anx_high, ymax =anx_low, colour=language), height=0.1)+
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="right")+
+  scale_color_viridis(discrete=TRUE) +
+  ylab("% Anxiety over 2019 baseline")+ xlab("Cases per million - 5 week average")
+
+anxconf
+
+
+```
+
+Correlation tests
+
+```{r,correlation test anxiety average 5 weeks}
+cor.test(~anx+log(confirmed.mean.pc), data = seldf, method="spearman")
+```
+
+# Cross-country correlations of anxiety with the change in cases per week after the outbreak
+
+The time scale for the above correlations across the entire 5 week period after the outbreak is quite long. Therefore we also looked at correlations with average cases per week for the 5 weeks after the outbreak.
+
+* Because we correct per capita, it is better to look at absolute change rather than relative change, otherwise we correct twice: number of cases in previous week depends on the population, if we divide through population, that is already enough. Dividing through both might introduce a weird bias. 
+* We think it is more plausible that people focus on absolute case numbers, i.e. they rather think "there are 500 new cases this week" than "there are double the cases this week". In addition, the media focus on reporting absolute case numbers. 
+
+```{r, correlations anxiety-absdiff cases per period, fig.width=12, fig.height=4, warning=FALSE, cache=TRUE, results=TRUE}
+ggplot(data = filter(wdf1, wordlist=="anxiety"), aes(x = log(confirmed.absdiff), y =(pr-bl)/bl,  label=factor(country2), colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(aes() )+ #color=language, fill=language
+  facet_grid(~period)+
+  # geom_text_repel(show.legend=F)+
+  #geom_errorbar(aes(ymin = sad_high, ymax = sad_low, color=language, fill=language), height=0.1)+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="bottom")+
+  ylab("% diff over baseline")+ xlab("Confirmed cases: Absolute difference\nto previous week (log-scaled)")+
+  ggtitle(toupper("anxiety"))+
+  scale_color_viridis(discrete=TRUE)
+
+corr_emo_casediff(wdf1, "confirmed.absdiff", "anxiety", "Week 1")
+```
+
+## Supplementary Figure with scatterplot per week
+
+Each week with labels (natural scale)
+
+```{r, fig.width=12, fig.height=7, cache=TRUE}
+pw1 = ggplot(data = filter(wdf1, wordlist=="anxiety" & period =="Week 1"), aes(x = (confirmed.absdiff), y =(pr-bl)/bl,  label=toupper(country), colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2)+
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), axis.title.x = element_blank(),
+                    legend.position="right")+
+  scale_color_viridis(discrete=TRUE)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million: absolute difference to previous week")+  ylim(-0.07, 0.72)
+pw2 = ggplot(data = filter(wdf1, wordlist=="anxiety" & period =="Week 2"), aes(x = (confirmed.absdiff), y =(pr-bl)/bl,  label=toupper(country), colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2)+
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), axis.title = element_blank(),
+                    legend.position="none")+
+  scale_color_viridis(discrete=TRUE,)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million: absolute difference to previous week")+  ylim(-0.07, 0.72)
+pw3 = ggplot(data = filter(wdf1, wordlist=="anxiety" & period =="Week 3"), aes(x = (confirmed.absdiff), y =(pr-bl)/bl,  label=toupper(country), colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2)+
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), axis.title = element_blank(),
+                    legend.position="none")+
+  scale_color_viridis(discrete=TRUE)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million: absolute difference to previous week")+  ylim(-0.07,  0.72)
+pw4 = ggplot(data = filter(wdf1, wordlist=="anxiety" & period =="Week 4"), aes(x = (confirmed.absdiff), y =(pr-bl)/bl,  label=toupper(country), colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2)+
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), axis.title.x = element_blank(),
+                    legend.position="none")+
+  scale_color_viridis(discrete=TRUE)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million: absolute difference to previous week")+  ylim(-0.07, 0.72)
+pw5 = ggplot(data = filter(wdf1, wordlist=="anxiety" & period =="Week 5"), aes(x = (confirmed.absdiff), y =(pr-bl)/bl,  label=toupper(country), colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2)+
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), axis.title = element_blank(),
+                    legend.position="none")+
+  scale_color_viridis(discrete=TRUE)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million: absolute difference to previous week")+  ylim(-0.07, 0.72)
+
+# extract the legend from one of the plots
+legend <- get_legend( pw1 )
+
+# add the legend to the row of plots
+pweeks = cowplot::plot_grid(pw1+theme(legend.position='none'), pw2, pw3, pw4, pw5, legend, nrow=2, ncol=3,rel_widths =  c(1,1,1))
+
+# pdf("figures/FigureSX_correlation_anx_cases_perweek_absdiff.pdf", width=11, height=7)
+ggdraw(add_sub(pweeks, "Cases per million: absolute difference to previous week", vpadding=grid::unit(1,"lines"),y=0.5, x=0.5))
+# dev.off()
+```
+
+
+```{r, correlation tests with anxiety absdiff, warning=FALSE, cache=TRUE, results=FALSE}
+#calculate the correlation for each week
+corranxcases1 = corr_emo_casediff(wdf1, "confirmed.absdiff", "anxiety", "Week 1")
+corranxcases2 = corr_emo_casediff(wdf1, "confirmed.absdiff", "anxiety", "Week 2")
+corranxcases3 = corr_emo_casediff(wdf1, "confirmed.absdiff", "anxiety", "Week 3")
+corranxcases4 = corr_emo_casediff(wdf1, "confirmed.absdiff", "anxiety", "Week 4")
+corranxcases5 = corr_emo_casediff(wdf1, "confirmed.absdiff", "anxiety", "Week 5")
+#add them into one data frame
+corranxcases=NULL
+corranxcases = data.frame(period = unique(wdf1$period), 
+                          rho = rbind(corranxcases1[4][[1]], corranxcases2[[4]][[1]],corranxcases3[4][[1]], corranxcases4[4][[1]], corranxcases5[4][[1]]), 
+                          p= rbind(corranxcases1[[3]], corranxcases2[[3]],corranxcases3[[3]], corranxcases4[[3]], corranxcases5[[3]]), 
+                          S= rbind(corranxcases1[[1]][[1]], corranxcases2[[1]][[1]],corranxcases3[[1]][[1]], corranxcases4[[1]][[1]], corranxcases5[[1]][[1]]))
+```
+
+In week 1, where we observe the strongest increase of anxiety, there is a strong correlation with the increase in new cases of r= 0.54 (S = 446, p-value = 0.023). It becomes weeker in week 2, and vanishes in week 3. It reemerges in week 5 (see paper for a discussion of this point).
+
+```{r}
+as.data.frame(corranxcases)
+```
+
+
+## Figure with 5 week average and week 1 scatterplot: Figure 4 for paper
+
+```{r, correlation anxiety with abs diff cases 5 weeks and week 1 , fig.width=11, fig.height=4.5, warning=FALSE, cache=TRUE, results=TRUE}
+#add the label 5weeks to name the period in the plot
+seldf$period = rep("5 weeks", n=nrow(seldf))
+plot.anx5weeks = ggplot(data = seldf, aes(x = confirmed.mean.pc, colour=language, y =anx, label=country2)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(aes(colour=language), size=2)  +
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  geom_errorbar(aes(ymin =anx_high, ymax =anx_low, colour=language), height=0.1)+
+  theme_bw()+ theme(text=element_text(size=14), legend.title=element_blank(),legend.position="none", 
+                    plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  scale_color_viridis(discrete=TRUE)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million - 5 week average")+
+  scale_y_continuous(limits=c(0,75))
+
+plot.anxw1 = ggplot(data = filter(wdf1, wordlist=="anxiety" & period =="Week 1"), aes(x = (confirmed.absdiff), y =100*(pr-bl)/bl,  label=country2, colour=language)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2)+
+  facet_grid(~period)+
+  geom_text_repel(show.legend=F)+
+  theme_bw()+ theme(text=element_text(size=14), legend.title=element_blank(),legend.position="right", axis.title.y=element_blank(), 
+                    plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  scale_color_viridis(discrete=TRUE) + #
+  # xlim(-120, 7100)+
+  ylab("% anxiety difference to 2019 baseline")+ xlab("Cases per million: difference to previous week")+
+  scale_y_continuous(limits=c(0,75))
+
+# pdf("figures/Figure4_correlation_anx_cases_5weeks&week1_absdiff.pdf", width=11, height=4.5)
+cowplot::plot_grid(plot.anx5weeks, plot.anxw1, rel_widths = c(1, 1.21), labels=c("a", "b"), label_size=25)
+# dev.off()
+```
+
+
+
+
+
+

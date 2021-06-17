@@ -1,0 +1,367 @@
+---
+title: "Covid-19 emotions: Measures Stringency"
+author: "Hannah Metzler & David Garcia"
+output: 
+  pdf_document:
+    toc_depth: 2
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, results=T, comment=NA)
+```
+
+```{r, libraries, results='hide', include=FALSE}
+library(tidyverse)
+library(scales) #for using transparency alpha in figures
+library(cowplot) #for figures
+library(ggrepel)#for overlapping labels in figures
+library(viridis)
+#for comparing time periods based on stringency
+library(lme4)#linear mixed effect models
+library(lmerTest) #for t-tests and p-values for parameter estimates
+
+#language English
+Sys.setlocale("LC_TIME", 'en_US.UTF-8')
+options(scipen=10)
+
+#functions for data processing, plotting, and settings
+source("scripts/functions_figure_settings.R")
+```
+
+```{r, load and preprocess data, results=FALSE, cache=TRUE}
+all <- read.csv("data_main/CountriesData.csv") #full data from all countries per day, with cases etc
+all <- all %>% 
+  mutate(date = as.Date(date), 
+         outbreak_date = as.Date(outbreak_date), 
+         social_distancing_start = as.Date(social_distancing_start)) %>% 
+  filter(!country %in% c("bel", "chefrench")) %>%  #exclude countries where dictionaries have not been cleaned before data processing
+  droplevels() %>% 
+  mutate(country2 = recode(country2, "NewZealand" = "New Zealand", "BelgiumDutch"="Belgium", "CanadaEnglish"="Canada"), 
+         country = toupper(recode(country,  "net" ="NLD", "ger"="DEU", "ire" ="IRL", "uk" = "GBR", "beldutch" = "BEL")),
+         language = dplyr::recode(country2, Austria = "German", Germany = "German", Switzerland = "German",
+                                  Italy = "Italian", France = "French", 
+                                  Spain = "Spanish", Chile= "Spanish", Ecuador= "Spanish", Peru= "Spanish", Mexico = "Spanish",
+                                  Belgium="Dutch", Netherlands="Dutch", 
+                                  "UK" ="English", USA="English", Canada="English", Ireland="English", Australia="English", "New Zealand" ="English"))
+
+#read in stringency of measures data from oxforc covid-19 government response tracker: https://www.bsg.ox.ac.uk/research/research-projects/covid-19-government-response-tracker
+ds0= read.csv('data_main/OxCGRT_stringencyindex.csv') 
+ds = ds0 %>% 
+  mutate(Date = as.Date(as.character(Date),format="%Y%m%d")) %>% 
+  filter(Date < as.Date("2020-04-30")) %>% 
+  filter(CountryName %in% c(as.character(unique(all$country2)),'New Zealand', 'Canada', "Belgium", 'United States', 'United Kingdom')) %>% 
+  droplevels() %>% 
+  #rename variables
+  rename(country2 = "CountryName", 
+         date = Date, 
+         country = CountryCode, 
+         stringency = StringencyIndex, 
+         confirmed = ConfirmedCases) %>% 
+  filter(RegionName == '') %>% #select only whole country index, not by region
+  #rename country code and name so it fits our dataset
+  mutate(country2 = recode(country2, "United Kingdom" ="UK","United States"="USA")) %>%
+  select(country, country2, date, stringency)
+
+## Time when stringency clearly starts increasing
+increasedate = ds %>% 
+  group_by(country2) %>% 
+  #first time the increase is above 20 stringency points within 7 days
+  mutate(stringencypre =  c(rep(NA, 7), stringency[1:(n()-7)]),
+         stringencydiff = stringency - stringencypre) %>% 
+  # select(country2, date, stringency, stringencypre, stringencydiff)
+  filter(stringencydiff > 20) %>% 
+  # only first line 
+  slice_head() %>% 
+  ungroup() %>% 
+  select(date, country2) %>% 
+  mutate(s_increase_date = date, 
+         #week before increase date
+         s_pre_increase_start = s_increase_date-14, 
+         s_pre_increase_end = s_increase_date-7, 
+         #week around stringency increase date
+         s_increase_week_start = s_increase_date-3, 
+         s_increase_week_end = s_increase_date+4, 
+         # 2 weeks after stringency increase date, 1 week long period
+         s_post_increase_start = s_increase_date+14, 
+         s_post_increase_end = s_increase_date+28) %>%
+  select(-date)
+
+#add increase date to time series of stringency and emotions, define time periods
+ds_days = ds %>% 
+  inner_join(increasedate) %>% 
+  inner_join(all, by = c("country2", "date", "country")) %>% 
+  #filter dates
+  filter(date > as.Date("2020-01-15") & date < as.Date("2020-04-20")) %>% 
+  #3 stringency periods: control, increase, and after
+  mutate(s_period = as.factor(case_when(
+    date < as.Date("2020-02-15") & date >= as.Date("2020-01-14") ~ "Control\nperiod", 
+    #week around the first 20 point stringency increase
+    date < s_increase_week_end & date > s_increase_week_start~ "First clear\nstringency\nincrease", 
+    date < s_pre_increase_end & date > s_pre_increase_start~ "One week\nbefore", 
+    date < s_post_increase_end & date > s_post_increase_start ~ "Two weeks\nlater",  
+    TRUE ~ "Other"))) %>% 
+  #order the periods
+  mutate(s_period = factor(s_period, 
+                           levels = c("Control\nperiod", "One week\nbefore", "First clear\nstringency\nincrease", "Two weeks\nlater", "Other")))
+
+# add stringency data to weekly levels dataframe: median stringency per week, for weekly correlations
+ds_means = ds_days %>% 
+  #exclude the in between time period dates
+  filter(s_period != "Other") %>% 
+  group_by(country, country2, s_period, wordlist, language) %>% 
+  summarise(mean = mean((pr-bl)/bl)) %>% 
+  ungroup() %>% 
+  droplevels() %>% #drop the level "other"
+  #make first letter of emotions capital
+  mutate(wordlist = recode(wordlist, anger= "Anger", anxiety = "Anxiety" , sadness="Sadness", positive= "Positive"), 
+         #reorder emotions
+         wordlist = factor(wordlist, levels=c("Anxiety", "Sadness", "Anger", "Positive")))
+```
+
+```{r, calculate difference to previous week for weekly correlations}
+#load data with average emotions per week: week data frame
+wdf = read.csv("data_main/AfterOutbreak-Weeks-5.csv") %>%
+  #calculate percentage per period
+  mutate(pr = 100*emo_n/tot_n) %>%
+  #rename country to country2
+  rename(country2=country) %>%
+  mutate(country2 = dplyr::recode(country2, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand"))
+
+#calculate relative change for each week, include 1 week before the date of the outbreak for this (week 0 to 5) ####
+allweeks = all %>%
+  filter(date >= outbreak_date-7) %>%  #start with date one week before the outbreak
+  #week 0 to 5
+  mutate(outbreak_week = case_when(
+    date < outbreak_date ~ 0,
+    date < outbreak_date+7 ~ 1,
+    date < outbreak_date+2*7 ~ 2,
+    date < outbreak_date+3*7 ~ 3,
+    date < outbreak_date+4*7 ~ 4,
+    date < outbreak_date+5*7 ~ 5)) %>%
+  ungroup() %>%
+  relocate(outbreak_week, .after="outbreak_date") %>%
+  #drop the lines with empty week column (after week 5)
+  filter(is.na(outbreak_week)==FALSE) %>%
+  filter(wordlist=="anxiety") %>% #cases are the same in each emotion line
+  group_by(country2, outbreak_week) %>%
+  slice(1) %>% #only the first line for each week
+  #change column order
+  relocate(c(confirmed, deaths), .after=outbreak_week) %>%
+  #drop uninformative variables
+  select(c(country2, country, date, outbreak_week, confirmed, deaths, outbreak_date, social_distancing_start))
+
+#emotion baseline for each emotion/country (the same for all weeks, because we are not looking at daily changes here)
+emobl = wdf %>%
+  filter(period=="baseline") %>%
+  #rename the emotion pr score in the baseline period to bl
+  rename(bl = pr) %>%
+  select(c(country2, wordlist, bl))
+
+#add the emotion baseline to the dataframe with level per week for 5 weeks after outbreak:
+wdf1 = wdf %>%
+  #add emotion baseline in percent
+  inner_join(emobl, by=c("country2", "wordlist")) %>%
+  arrange(country2) %>%
+  #make a factor for language and continent
+  mutate(
+    language = dplyr::recode(country2, Austria = "German", Germany = "German", Switzerland = "German",
+                             Italy = "Italian", France = "French",
+                             Spain = "Spanish", Chile= "Spanish", Ecuador= "Spanish", Peru= "Spanish", Mexico = "Spanish",
+                             Belgium="Dutch", Netherlands="Dutch",
+                             "UK" ="English", USA="English", Canada="English", Ireland="English", Australia="English", "New Zealand" ="English"),
+    continent = dplyr::recode(country2, Austria = "Europe", Germany = "Europe", Switzerland = "Europe",
+                              Italy = "Europe",  France = "Europe", Spain = "Europe",
+                              Belgium="Europe", Netherlands="Europe", "UK" ="Europe", Ireland="Europe",
+                              USA="North America", Canada="North America",
+                              Australia="Australia", "New Zealand" ="Australia",
+                              Chile= "South America", Ecuador= "South America", Peru= "South America", Mexico = "South America"))
+```
+
+
+## Stringency and emotions over time
+
+Time periods shown in grey: 
+
+* Control period (Mid Jan to Mid February)
+* 1 week period 1 week before the strong stringency increase
+* Stringency increase: first time the increase is above 20 stringency points within 7 days, 3 days before and 3 days after this day
+* 2 week period 2 weeks after the strong stringency increase
+
+```{r, fig.height=10, fig.width=9, cache=TRUE, results=F}
+#stringency over time
+#english month names
+Sys.setlocale("LC_TIME", 'en_US.UTF-8')
+#plot
+ts_stringency = ggplot(data=ds_days)+
+  #grey areas for time periods
+  geom_rect(data=ds_days,aes( xmin=as.Date(s_increase_week_start), xmax=as.Date(s_increase_week_end), ymin=-Inf, ymax=Inf), fill="grey93")+
+  geom_rect(data=ds_days,aes( xmin=as.Date(s_pre_increase_start), xmax=as.Date(s_pre_increase_end), ymin=-Inf, ymax=Inf), fill="grey93")+
+  geom_rect(data=ds_days,aes( xmin=as.Date(s_post_increase_start), xmax=as.Date(s_post_increase_end), ymin=-Inf, ymax=Inf), fill="grey93")+
+  geom_rect(data=ds_days,aes( xmin=as.Date("2020-01-15"), xmax=as.Date("2020-02-14"), ymin=-Inf, ymax=Inf), fill="grey93")+
+  #stringency lines
+  geom_line(aes(y=stringency, x=date))+
+  facet_wrap(~country2, ncol=4) +
+  #emotion lines
+  geom_line(aes(x=date, y=100*(pr-bl)/bl, colour=wordlist))+
+  geom_ribbon(aes(x=date, ymin=100*(prlow-bl)/bl, ymax=100*(prhigh-bl)/bl, fill=wordlist, colour=wordlist), alpha=0.2, size=0) +
+  labs(y="% difference over baseline")+
+  theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="bottom", axis.title.x=element_blank())+
+  scale_colour_manual(values = c("anxiety"="orange", "anger"="red", "sadness"="blue", "positive"="cyan"))+
+  #secondary axis
+  scale_y_continuous(sec.axis = sec_axis(~., name = "Stringency Index"))+
+  geom_hline(yintercept = 0, colour = "grey50") #mean line
+# ggsave('figures/stringency_emotions_time_seriesR.pdf', plot = ts_stringency, width=9.5, height=11)
+
+
+```
+```{r, stringency time series, fig.height=10, fig.width=9}
+ts_stringency
+```
+
+
+## Stringency box plot per time period plus example country
+
+Time periods: 
+
+* Control period (Mid Jan to Mid February)
+* 1 week period 1 week before the strong stringency increase
+* Stringency increase: first time the increase is above 20 stringency points within 7 days, 3 days before and 3 days after this day
+* 2 week period 2 weeks after the strong stringency increase
+
+```{r,fig.width=12.5, fig.height=5.5, warning=FALSE, cache=TRUE, results=TRUE }
+df = filter(ds_days, country2=="Ireland")
+country_stringency= ggplot(data=df)+
+  ggtitle(unique(df$country2))+
+  geom_rect(data=df, aes( xmin=as.Date(s_increase_week_start), xmax=as.Date(s_increase_week_end), ymin=-Inf, ymax=Inf), fill="grey85")+
+  geom_rect(data=df, aes( xmin=as.Date(s_pre_increase_start), xmax=as.Date(s_pre_increase_end), ymin=-Inf, ymax=Inf), fill="grey85")+
+  geom_rect(data=df, aes( xmin=as.Date(s_post_increase_start), xmax=as.Date(s_post_increase_end), ymin=-Inf, ymax=Inf), fill="grey85")+
+  geom_rect(data=df, aes( xmin=as.Date("2020-01-15"), xmax=as.Date("2020-02-14"), ymin=-Inf, ymax=Inf), fill="grey85")+
+  geom_line( aes(y=stringency, x=date))+
+  geom_line(aes(x=date, y=100*(pr-bl)/bl, colour=wordlist))+
+  geom_ribbon( aes(x=date, ymin=100*(prlow-bl)/bl, ymax=100*(prhigh-bl)/bl, fill=wordlist, colour=wordlist), alpha=0.2, size=0) +
+  labs(y="% difference over baseline")+
+  theme_bw()+ theme(text=element_text(size=axisfontsize-1), axis.text=element_text(size=labelsize-1), legend.title=element_blank(),
+                    legend.position="bottom", axis.title.x=element_blank())+
+  scale_colour_manual(values = c("anxiety"="orange", "anger"="red", "sadness"="blue", "positive"="cyan"))+
+  scale_y_continuous(sec.axis = sec_axis(~., name = "Stringency Index"))+
+  geom_hline(yintercept = 0, colour = "grey50") #mean line
+
+boxplot=ggplot(ds_means, aes(x=s_period, y =mean, label = factor(country))) +
+  facet_wrap(~wordlist)+
+  geom_boxplot(aes(fill=wordlist, colour=wordlist), alpha=0.2, size=0.8)+
+  geom_point()+ 
+  # geom_text_repel(show.legend=F, size=2.5)+
+  theme_bw()+ theme( axis.title.x=element_blank(), legend.position="none", text=element_text(size=axisfontsize-1), axis.text=element_text(size=labelsize-1), strip.text=element_text(size=labelsize))+
+  ylab("% Mean difference over baseline")+ 
+  scale_fill_manual(values = c("Anxiety"="orange", "Anger"="red", "Sadness"="blue", "Positive"="cyan"))+
+  scale_colour_manual(values = c("Anxiety"="orange", "Anger"="red", "Sadness"="blue", "Positive"="cyan"))
+#add plots together
+cowplot::plot_grid(
+  plot_grid(NULL, country_stringency, NULL, ncol=1, rel_heights = c(0.1, 1, 0.35)), boxplot, labels =c("a", "b"), label_size=25, rel_widths = c(0.8,1))
+
+ggsave('figures/stringency_periods_emotion_boxplots_withexamplecountry.pdf', width=12, height=5.5)
+```
+
+## Linear model to compare each period to the next
+
+```{r, results=F}
+#define repeated contrasts (backward difference contrast): compare each period to the previous one
+# Period: control vs. pre | pre vs increase | increase vs post
+# control     -3/4           -2/4                   -1/4 
+# pre         1/4            -2/4                   -1/4 
+# increase    1/4             2/4                   -1/4 
+# post        1/4             2/4                   3/4 
+repcontrasts <- as.data.frame(matrix(data = c(-3/4, 1/4, 1/4, 1/4,  -2/4,-2/4, 2/4, 2/4, -1/4,-1/4,-1/4, 3/4) , nrow =4, ncol=3))
+names(repcontrasts) <- c("control-pre", "pre-increase", "increase-post")
+contrasts(ds_means$s_period) <- as.matrix(repcontrasts)
+```
+
+### Anxiety
+
+```{r}
+df = filter(ds_means, wordlist=="Anxiety")
+m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
+summary(m)
+confint(m)[3:6,]
+# REML = FALSE is needed when model comparison is used to determine p-values (determines how variances are calculated)
+```
+
+
+<!-- T-tests with only 2 levels:  -->
+```{r}
+# t1 = papaja::apa_print(t.test(mean ~ s_period, data=filter(ds_means, wordlist=="Sadness" & s_period !="Two weeks later"), paired=T))
+# t2 = papaja::apa_print(t.test(mean ~ s_period, data=filter(ds_means, wordlist=="Sadness" & s_period !="Control period"), paired=T))
+# apa_print(m)$estimate and apa_print(m)$statistic for linear regressions
+```
+<!-- * Control vs. increase period: `r #t1$full_result` -->
+<!-- * Increase vs. plateau period: `r #t2$full_result` -->
+
+
+### Sadness
+
+```{r}
+df = filter(ds_means, wordlist=="Sadness")
+m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
+summary(m)
+confint(m)[3:6,]
+```
+
+
+## Anger
+
+```{r}
+df = filter(ds_means, wordlist=="Anger")
+m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
+summary(m)
+confint(m)[3:6,]
+```
+
+
+## Positive
+
+```{r}
+df = filter(ds_means, wordlist=="Positive")
+m = lmer(mean ~ s_period + (1|country), data=df, REML=F)
+summary(m)
+confint(m)[3:6,]
+```
+
+## Strigency median per week after outbreak
+
+```{r, process stringency data}
+#dataframe only for time period after outbreak plus control, to be shown in time series plots below
+outbreakdate = select(all, outbreak_date, country2, social_distancing_start) %>% 
+  group_by(country2) %>% 
+  slice(1) %>% 
+  ungroup()
+#add week label 1-5 after outbreak
+ds2 = ds %>% 
+  #filter dates
+  filter(date > as.Date("2020-02-01") & date < as.Date("2020-04-20")) %>% 
+  inner_join(outbreakdate) %>% 
+  mutate(period = case_when(
+    date < outbreak_date ~ 0, 
+    date < outbreak_date+7 ~ 1,  
+    date < outbreak_date+2*7 ~ 2,
+    date < outbreak_date+3*7 ~ 3,
+    date < outbreak_date+4*7 ~ 4,
+    date < outbreak_date+5*7 ~ 5)) %>% 
+  mutate(period = as.factor(paste("Week", period)), 
+         enddate = outbreak_date+35) 
+# add stringency data to weekly levels dataframe: median stringency per week
+ds3 = ds2 %>% 
+  filter(period != "Week NA" & period != "Week 0") %>% 
+  group_by(country, country2, period) %>% 
+  summarise(stringency = median(stringency)) %>% 
+  ungroup()
+```
+
+```{r}
+ggplot(ds3,aes(x=period, y=stringency))+
+  geom_bar(stat="summary", fun.y = "median", fill="white", colour="black")+
+  #geom_boxplot(a es(x=period, y=stringency, group=period))+
+  geom_line(aes(group=country2, colour=country2), stat="summary", fun.y = "mean")+
+  geom_point(aes(group=country2, colour=country2), stat="summary", fun.y = "mean")
+```

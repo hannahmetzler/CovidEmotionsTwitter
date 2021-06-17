@@ -1,0 +1,88 @@
+---
+title: "RoBERTa ROCs"
+author: "Hannah Metzler, Bernard Rimé & David Garcia, etc"
+output:
+  pdf_document
+url_colour: blue
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warnings=FALSE)
+```
+
+```{r, libraries, results='hide'}
+library(tidyverse)
+# library(plotly)
+library(boot)
+library(pROC) #for roc curves
+```
+
+# ROC for RoBERTa
+
+## English
+
+```{r, fig.width=6, fig.height=5.5}
+df <- read.table("data_roberta/RobertaROCs/2018-E-c-En-test-gold.txt", header=T, sep="\t", quote="", comment="")
+Rdf <- read.table("data_roberta/RobertaROCs/2018-E-c-En-test-gold.txt_tweeteval", header=T)
+
+plot(roc(response=df$anger, predictor=Rdf$anger), main="anger (EN)", print.auc=T, show.thres=TRUE)
+```
+
+```{r, fig.width=6, fig.height=5.5}
+plot(roc(response=df$sadness, predictor=Rdf$sadness), main="sadness (EN)", print.auc=T)
+```
+
+```{r, fig.width=6, fig.height=5.5}
+plot(roc(response=df$fear, predictor=Rdf$fear), main="fear (EN)", print.auc=T)
+```
+
+```{r, fig.width=6, fig.height=5.5}
+plot(roc(response = (df$optimism==1 | df$joy==1 | df$love==1), predictor=Rdf$optimism + Rdf$joy + Rdf$love), main="positive (EN)", print.auc=T)
+```
+```{r}
+#make table with AUCs for paper
+auc =data.frame(cbind(anxiety = rep(NA, 2), sadness = rep(NA, 2), anger = rep(NA, 2), positive = rep(NA, 2)), row.names=c("English", "Spanish"))
+auc$anxiety[1] = roc(response=df$fear, predictor=Rdf$fear)$auc
+auc$anger[1] = roc(response=df$anger, predictor=Rdf$anger)$auc
+auc$sadness[1] = roc(response=df$sadness, predictor=Rdf$sadness)$auc
+auc$positive[1] = roc(response = (df$optimism==1 | df$joy==1 | df$love==1), predictor=Rdf$optimism + Rdf$joy + Rdf$love)$auc
+```
+
+
+## Spanish
+
+```{r}
+df <- read.table("data_roberta/RobertaROCs/2018-E-c-Es-test-gold.txt", header=T, sep="\t", quote="", comment="")
+Rdf <- read.table("data_roberta/RobertaROCs/2018-E-c-Es-test-gold.txt_tweeteval", header=T)
+
+plot(roc(response=df$anger, predictor=Rdf$anger), main="anger (ES)", print.auc=T)
+```
+
+```{r, fig.width=6, fig.height=5.5}
+plot(roc(response=df$sadness, predictor=Rdf$sadness), main="sadness (ES)", print.auc=T)
+```
+
+```{r, fig.width=6, fig.height=5.5}
+plot(roc(response=df$fear, predictor=Rdf$fear), main="fear (ES)", print.auc=T)
+```
+
+```{r, fig.width=6, fig.height=5.5}
+plot(roc(response = (df$optimism==1 | df$joy==1 | df$love==1), predictor=Rdf$optimism + Rdf$joy + Rdf$love), main="positive (ES)", print.auc=T)
+```
+
+## Table S12 for paper with AUCs
+
+```{r}
+
+# add spanish AUC to table
+auc$anxiety[2] = roc(response=df$fear, predictor=Rdf$fear)$auc
+auc$anger[2] = roc(response=df$anger, predictor=Rdf$anger)$auc
+auc$sadness[2] = roc(response=df$sadness, predictor=Rdf$sadness)$auc
+auc$positive[2] = roc(response = (df$optimism==1 | df$joy==1 | df$love==1), predictor=Rdf$optimism + Rdf$joy + Rdf$love)$auc
+auc = round(auc, 2)
+auc
+write.csv(auc, file='output/Table_AUC.csv')
+```
+
+

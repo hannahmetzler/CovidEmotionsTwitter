@@ -1,0 +1,1716 @@
+---
+title: "Collective Emotions during the Covid-19 Outbreak: temporal emotion dynamics"
+subtitle: "Descriptive statistics, timelines, regressions 5 weeks after outbreak, duration of changes"
+author: "Hannah Metzler & David Garcia"
+output: 
+  pdf_document:
+    df_print: kable
+    keep_tex: true
+url_colour: blue
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+Sys.setlocale("LC_ALL", 'en_US.UTF-8')
+options(scipen=10)
+```
+
+```{r, libraries, results='hide'}
+library(tidyverse)
+library(scales) #for figures
+library(gridExtra) #for figures
+library(lme4) #for models
+library(cowplot) #for figures
+library(ggrepel)#for overlapping labels in figures
+library(broom.mixed) #for tidy model output tables
+library(sjPlot) #for exporting model tables
+#colours in graphics
+library(viridis)
+library(RColorBrewer)
+
+#functions for data processing, plotting, and settings
+source("scripts/functions_figure_settings.R")
+```
+
+```{r, data processing, results=FALSE, eval=FALSE}
+#data processing steps that take a few hours, since they include calculation of CIs, load data file CountriesData.csv instead (next section)
+#source("scripts/process_data.R")
+```
+
+```{r, load data, results=FALSE, cache=TRUE}
+all <- read.csv("data_main/CountriesData.csv") 
+all <- all %>% 
+  mutate(date = as.Date(date)) %>% 
+  mutate(continent = dplyr::recode(country2, Austria = "Europe", Germany = "Europe", Switzerland = "Europe",
+                                   Italy = "Europe",  France = "Europe", Spain = "Europe", 
+                                   BelgiumDutch="Europe", Netherlands="Europe", "UK" ="Europe", Ireland="Europe",
+                                   USA="North America", CanadaEnglish="North America", 
+                                   Australia="Australia", "NewZealand" ="Australia", 
+                                   Chile= "South America", Ecuador= "South America", Peru= "South America", Mexico = "South America"))
+
+#load dates of nationwide broad social distancing measures in each country (for the timeline figures)
+measures <- read.csv2('data_main/SocialDistancingMeasures.csv') %>% 
+  mutate(social_distancing = as.Date(social_distancing, format = '%d/%m/%y')) %>% 
+  select(country, social_distancing)
+
+#light data processing steps, like calculating periods above/below baseline with the data loaded above
+source("scripts/process_data_light.R")
+
+#measure stringency
+ds0= read.csv('data_main/OxCGRT_stringencyindex.csv') 
+ds = ds0 %>% 
+  mutate(Date = as.Date(as.character(Date),format="%Y%m%d")) %>% 
+  filter(Date < as.Date("2020-04-30")) %>% 
+  filter(CountryName %in% c(as.character(unique(all$country2)),'New Zealand', 'Canada', "Belgium", 'United States', 'United Kingdom')) %>% 
+  droplevels() %>% 
+  #rename variables
+  rename(country2 = "CountryName", 
+          date = Date, 
+         country = CountryCode, 
+         stringency = StringencyIndex, 
+         confirmed = ConfirmedCases) %>% 
+  filter(RegionName == '') %>% #select only whole country index, not by region
+  #rename country code and name so it fits our dataset
+     mutate(country2 = recode(country2, "United Kingdom" ="UK","United States"="USA")) %>% 
+  select(country, country2, date, stringency)
+
+```
+
+# Descriptive statistics
+
+## Across all countries and entire time period
+
+Mean, SD, and 95% CI around the mean across the entire time period, and mean for the baseline period (2019). 
+
+```{r}
+all %>% 
+  group_by(wordlist) %>% 
+  summarize(meanpr = mean(pr), sdpr = sd(pr),meancilow = mean(prlow), meancihigh = mean(prhigh),  
+            meanbl = mean(bl))
+```
+
+## Sample size and mean per day per country
+
+```{r}
+
+tweets_per_country <- all %>% 
+  group_by(country2) %>%
+  filter(wordlist=="anger") %>% 
+  summarize(milliontweets = round(sum(as.numeric(tot_n)/1000000), 2),
+            meantweetsperday = round(mean(as.numeric(tot_n)), 2)) %>% 
+  ungroup()
+tweets_per_country
+write.csv2(tweets_per_country, 'output/tweet_sample_size_country.csv',row.names=F)
+```
+
+## Total sample size
+
+```{r}
+tweets_per_country %>% 
+  summarise(ntotal_mio = sum(milliontweets), 
+            min = min(milliontweets), 
+            max = max(milliontweets))
+
+```
+
+\newpage
+
+## Maximal change after outbreak compared to baseline
+
+Peak changes (1) for each emotion in each country, and (2) their median and range across countries (i.e. from country with lowest to country with highest peak). 
+
+```{r}
+#date with 30 cases as threshold for each country, then look at the maximal value after that date
+casesabove30 <- all$confirmed>=30
+peaks <- all %>% 
+  mutate(casesabove30 = ifelse(confirmed>=30, 1, 0)) %>% 
+  filter(casesabove30 ==1) %>% #only days after this date
+  group_by(wordlist, country2) %>% 
+  summarize(max_change = max(100*(pr-bl)/bl))
+peaks
+
+   
+peaks %>% group_by(wordlist) %>% 
+  summarize(median_max = median(max_change),
+            lowest_max = min(max_change), 
+            highest_max = max(max_change))
+
+```
+
+## Choosing example countries for Figure 1
+
+Rank by number of confirmed cases: 
+
+```{r}
+all %>% 
+  filter(date == as.Date("2020-04-15")) %>%  
+  filter(wordlist == "anxiety") %>% 
+  arrange(confirmed) %>% 
+  select(date, country2, confirmed)
+```
+
+\newpage
+
+## Table S1. Average proportions per country (grand mean and standard deviations across analyzed time period from January 2019 to April 2020)
+
+```{r}
+dataperiods <- read.csv("data_main/AfterOutbreak-Weeks-5.csv")
+p_country <- dataperiods %>%
+  mutate(country = dplyr::recode(country, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand")) %>% 
+  mutate(Emotion = recode(wordlist, anger = "Anger", anxiety = "Anxiety", positive = "Positive", sadness = "Sadness")) %>% 
+  rename(Country = country) %>% 
+  group_by(Emotion, Country) %>% 
+  mutate(pr = emo_n/tot_n) %>% 
+  summarize("Mean %" = round(100*mean(pr),2), SD = round(100*sd(pr),2))
+
+p_country
+
+write.csv2(p_country, "output/TableS1_percentage_country.csv", row.names=F)
+```
+
+\newpage
+
+## Table S2. Average proportions per time period across countries
+
+```{r}
+p_period <- dataperiods %>%
+  mutate(country = dplyr::recode(country, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand")) %>% 
+  mutate(Emotion = recode(wordlist, anger = "Anger", anxiety = "Anxiety", positive = "Positive", sadness = "Sadness")) %>% 
+  mutate(Period = recode(period, baseline = "Baseline", control = "Control")) %>% 
+  group_by(Emotion, Period) %>% 
+  mutate(pr = emo_n/tot_n) %>% 
+  summarize("Mean %" = round(100*mean(pr),2), SD = round(100*sd(pr),2))
+
+p_period
+
+write.csv2(p_period, "output/TableS2_percentage_period.csv", row.names=F)
+```
+
+\newpage
+
+# Timeseries of cases in all countries
+
+In Latin America, cases only start to increase later than in Europe and North America. 
+
+```{r, cases in all countries}
+#per continent colour, log scale
+ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-15")), 
+       aes(x = date, y =log(confirmed),  group=country, colour=continent)) +
+  geom_line()+
+    theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="right")+
+  ylab("Confirmed cases (log)") + xlab("")+
+  scale_color_viridis(discrete=T)+ggtitle("Cases on log scale - all countries")
+
+#per country colour, without the US
+ggplot(data = filter(all, date > as.Date("2020-02-01") & date <as.Date("2020-04-15") & country2!="USA"), 
+       aes(x = date, y =(confirmed),  colour=country2)) +
+  geom_line()+
+    theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="right")+
+  ylab("Confirmed cases") + xlab("")+ggtitle("Cases on natural scale - all countries except the US")+
+   scale_color_viridis(discrete=T)
+```
+
+
+# Time series of total tweets and followers
+
+```{r, total tweets, fig.height=8, fig.width=7}
+#colours
+colscountries = c(brewer.pal(11, "PRGn")[c(1:4,8:11)], brewer.pal(11, "RdYlBu")[c(1:5,8,10,11)], brewer.pal(11, "PiYG")[c(2,4)])
+
+# read in twitter follower, retweets, authors data for example countries
+df = read.csv('data_main/TwitterChange.csv') %>% 
+  mutate(date=as.Date(date), 
+         country = as.factor(country), 
+         Twitter = as.factor(Twitter))
+dfchange = df %>% 
+  filter(date > as.Date('2020-01-01')) %>%
+  mutate(pre_post = if_else(date < '2020-03-01', "Jan-Feb", 'Mar-Apr')) %>% 
+  group_by(pre_post, country) %>% 
+  summarise(mean_change = mean((value-bl)/bl), 
+            max_change = max((value-bl)/bl)) %>% 
+  ungroup() %>% 
+  filter(pre_post =="Mar-Apr")
+
+#plot
+ggplot(filter(df, date > as.Date("2019-12-31") & date < as.Date("2020-04-20")))+
+  
+  geom_line(aes(x=date, y=100*(value-bl)/bl, colour=country))+ #
+  facet_wrap(~Twitter, ncol = 1)+
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize, angle=45, hjust=1), 
+                    axis.title.x = element_blank(),
+                    legend.title=element_blank(), legend.position="bottom",
+                    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"))+
+  ylab("% change over 2019 baseline") + 
+  scale_x_date(date_breaks="1 month", date_labels = "%b")+
+  scale_colour_manual(values=colscountries)+
+  geom_hline(yintercept = 0, colour = "grey50") #mean line
+ggsave('figures/twitter_change_allcountries.pdf', height=8, width=8)
+```
+
+Mean change: `r mean(dfchange$max_change)[1]`
+
+# Legends for timeline plots
+
+* In all timeline plots below, the black dashed line indicates the onset of nationwide social distancing measures that concern the general population, rather than just some small subgroups (e.g. prisons, retirement homes, universities). Such general measures include closures of bars, restaurants, schools, kindergardens, stay at home orders, restrictions on the usage of public transport etc.
+* The grey rectangles at the bottom of each figure indicate the time periods we analysed in logistic regressions, the control period from 15 January to 14 February, and 5 one-week periods starting from the outbreak of Covid-19 in each country. The outbreak was defined as the day on which the number of confirmed cases reached 30. 
+* The last figure (Figure 2) shows the regression coefficients for each of these six periods (control, and week 1 to 5). 
+
+# Italy
+
+```{r, Italy, fig.width=6, fig.height=4.5, cache=TRUE}
+#only 2020
+all %>% 
+  filter(country=="ita") %>% 
+  filter(date > as.Date("2020-01-01")) -> df
+
+firstcase <- df %>%
+  filter(confirmed > 0) %>% 
+  slice(1) %>% 
+  select(date)
+
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -25
+
+plotlines <- plotTS(df, mode="percent", title="Italy", limits=NULL)+
+  #lockdown line and label
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = as.numeric(firstcase), colour = "grey", linetype=2) #add first case date to label the high peak (all other peaks in Figure 1 have labels too)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+ggsave('figures/EmotionTimelines2020_Italy.pdf', width=8, height=6, dpi=300)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Italy", limits=c(-30,100))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = as.numeric(firstcase), colour = "grey", linetype=2)+ #add first case date to label the high peak (all other peaks in Figure 1 have labels too)
+  theme(axis.title.y.right = element_blank())
+plotita <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh))
+
+
+```
+
+\newpage
+
+# Spain
+
+Events
+
+* Blue: Parliament election of prime minister in polarized climate 2020-01-05
+
+```{r, Spain, fig.width=10, fig.height=6, cache=TRUE}
+
+all %>%
+  filter(country=="esp") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#peak days
+election <- as.Date("2020-01-05")
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -15; yt = -12.7
+
+plotlines <- plotTS(df, mode="percent", title="Spain", limits=NULL, factor = 6.5) +
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = election, colour = colnormal, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Spain", limits=c(-15,45), factor = 6.5) +
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = election, colour = colnormal, linetype=2)+
+  theme(axis.title.y.right = element_blank())
+plotesp <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+```
+
+\newpage
+
+# France
+
+```{r, France, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="fra") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -12; yt = -10.5
+
+plotlines <- plotTS(df, mode="percent", title="France", limits=NULL, factor=4)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_label(label="Nationwide social distancing", x=lockdown, y = 20, colour = collockdown, size = 4)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+# plot for paper
+plotlines <- plotTS(df, mode="percent", title="France", limits=c(-12,30), factor=4)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(legend.position="none")
+plotfra <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+```
+
+\newpage
+
+# Germany
+
+Events
+
+* Red: Terrorist attack in Hanau on 2020-02-25
+
+```{r, Germany, fig.width=10, fig.height=6, cache=TRUE}
+
+#all emotions for Germany
+
+#important dates Germany:
+hanau <- as.Date("2020-02-19")#right extremist terrorist attack in Hanau
+all %>%
+  filter(country=="ger") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -25
+
+plotlines <- plotTS(df, mode="percent", title="Germany", limits=NULL)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  geom_label(label="terrorist attack Hanau", x=hanau-9, y = 70, colour = colterror, size = 4)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_label(label="Nationwide social distancing", x=lockdown, y = 80, colour = collockdown, size = 4)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Germany", limits=c(-30,100))+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  geom_label(label="terrorist attack Hanau", x=hanau-9, y = 70, colour = colterror, size = 4)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_label(label="Nationwide social distancing", x=lockdown, y = 80, colour = collockdown, size = 4)+
+  theme(axis.title.y.left = element_blank())
+
+plotger <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+```
+
+\newpage
+
+# Austria
+
+Events
+
+* Red: Terrorist attack in Hanau on 2020-02-25
+
+```{r, Austria, fig.width=6, fig.height=4.5, cache=TRUE}
+all %>%
+  filter(country=="aut") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+firstcase <- df %>%
+  filter(confirmed > 0) %>%
+  slice(1) %>%
+  select(date)
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -40; yt = -35
+
+plotlines <- plotTS(df, mode="percent", title="Austria", limits=NULL)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = as.numeric(firstcase), colour = "grey", linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Austria", limits=c(-40,100))+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.right = element_blank(), legend.position="none")
+plotaut <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+# cowplot::plot_grid(plotita, plotaut, ncol=2, nrow=1)
+# ggsave('figures/EmotionTimelines_Ita&Aut_with_stringency.pdf', width=12, height=4)
+```
+
+\newpage
+
+# Switzerland (German)
+
+```{r, Switzerland, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="che") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -40; yt = -35
+
+plotlines <- plotTS(df, mode="percent", title="Switzerland", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  geom_vline(xintercept = as.numeric(firstcase), colour = "grey", linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Switzerland", limits=c(-40,100))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  theme(axis.title.y.left = element_blank(), legend.position="none")
+plotche <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+
+```
+
+
+\newpage
+
+# UK
+
+```{r, UK, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="uk") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -28; yt = -24
+
+plotlines <- plotTS(df, mode="percent", title="United Kingdom", limits=NULL,  factor=12)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="United Kingdom", limits=c(-30,95),  factor=12)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.right = element_blank(), legend.position="none")
+plotuk <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+
+```
+
+# Ireland
+
+```{r, Ireland, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="ire") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -28; yt = -24
+
+plotlines <- plotTS(df, mode="percent", title="Ireland", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+
+plotlines <- plotTS(df, mode="percent", title="Ireland", limits=c(-30,95))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.left = element_blank(),  legend.position="none")
+plotire <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+```
+
+\newpage
+
+# The Netherlands
+
+```{r, Netherlands, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="net") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -25
+
+plotlines <- plotTS(df, mode="percent", title="The Netherlands", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="The Netherlands", limits=c(-30,100))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2) +
+  theme(axis.title.y.right = element_blank(), legend.position="none")
+plotnet <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+```
+
+\newpage
+
+# Belgium (Dutch)
+
+```{r, Belgium, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="beldutch") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -25
+
+plotlines <- plotTS(df, mode="percent", title="Belgium (Dutch)", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Belgium (Dutch)", limits=c(-30,100))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = hanau, colour = colterror, linetype=2)+
+  theme(axis.title.y.left = element_blank(), legend.position="none")
+plotbel <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+
+df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl))
+
+
+```
+
+
+\newpage
+
+# USA
+
+Events
+
+* Green: USA kills Iraqi military commander Soleimani on 2020-01-03
+* Purple: Death of Kobe Bryant on 2020-01-26
+* Blue: Super Bowl annual chamiponship of the National Football League (NFL) on 2020-02-03. Large sports events are usually linked to an increase of various emotions, not just anxiety, so it is likely that we will see a similar increase when analyzing other emotions.
+* Black: date where the first state implements some form of lockdown 2020-03-19, the last state follows on 2020-04-07
+
+```{r, USA, fig.width=10, fig.height=6, cache=TRUE}
+
+#all emotions for USA
+
+#important dates USA:
+soleimani <- as.Date("2020-01-03")# 2020-01-03 #USA kills Iraqi military commander Soleimani
+superbowl <- as.Date("2020-02-03") #sport event
+kobe <- as.Date("2020-01-26") #sport event
+
+all %>%
+  filter(country=="usa") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date("2020-03-19") #as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -15; yt = -12.7
+
+plotlines <- plotTS(df, mode="percent", title="USA", limits=NULL, factor=7.5) +
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  #individual US events
+  geom_vline(xintercept = soleimani, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = superbowl, colour = colnormal, linetype=2)+
+  geom_vline(xintercept = kobe, colour = colcatast, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+# ggsave('figures/EmotionTimelines2020_USA.pdf', width=8, height=6, dpi=300)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+# #plot for paper
+plotlines <- plotTS(df, mode="percent", title="USA", limits=c(-15,45), factor=7.5) +
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = soleimani, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = superbowl, colour = colnormal, linetype=2)+
+  geom_vline(xintercept = kobe, colour = colcatast, linetype=2)+
+  theme(axis.title.y.left = element_blank())
+plotusa <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+```
+
+\newpage
+
+# Canada
+
+Events
+
+* Green: USA kills Iraqi military commander Soleimani on 2020-01-03
+* Purple: Death of Kobe Bryant on 2020-01-26
+* Blue: Super Bowl annual chamiponship of the National Football League (NFL) on 2020-02-03. Large sports events are usually linked to an increase of various emotions, not just anxiety, so it is likely that we will see a similar increase when analyzing other emotions.
+* Black: date where 90% of US population under some form of lockdown, first state on 2020-03-19, last state on 2020-04-07
+
+
+```{r, Canada, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="can") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -26
+
+plotlines <- plotTS(df, mode="percent", title="Canada", limits=NULL, factor=12)+
+  geom_vline(xintercept = soleimani, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = superbowl, colour = colnormal, linetype=2)+
+  geom_vline(xintercept = kobe, colour = colcatast, linetype=2)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for the paper
+plotlines <- plotTS(df, mode="percent", title="Canada", limits=c(-30,80), factor=12)+
+  geom_vline(xintercept = soleimani, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = superbowl, colour = colnormal, linetype=2)+
+  geom_vline(xintercept = kobe, colour = colcatast, linetype=2)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.right = element_blank(), legend.position="none")
+plotcan <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+  ```
+
+\newpage
+
+# Australia
+
+```{r, Australia, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="aus") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -26
+
+plotlines <- plotTS(df, mode="percent", title="Australia", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+plotlines <- plotTS(df, mode="percent", title="Australia", limits=c(-30,80))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.left = element_blank(), legend.position="none")
+plotaus <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+```
+
+\newpage
+
+# New Zealand
+
+```{r, New Zealand, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="nzl") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -26
+
+plotlines <- plotTS(df, mode="percent", title="New Zealand", limits=NULL, factor=20)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="New Zealand", limits=c(-30,80), factor=20)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.right = element_blank(), legend.position="none")
+plotnzl <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+
+
+```
+
+\newpage
+
+# Chile
+
+Events
+
+* Green 1: Peak associated with civil protests against increased cost of living, privatisation and social inequality (https://en.wikipedia.org/wiki/2019%E2%80%932020_Chilean_protests).
+* Green 2: Protests against violence against women
+
+
+```{r, Chile, fig.width=10, fig.height=6, cache=TRUE}
+#events
+chileprotests <- as.Date("2020-01-29")
+womensday <- as.Date("2020-03-08")
+
+all %>%
+  filter(country=="chl") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -26
+
+plotlines <- plotTS(df, mode="percent", title="Chile", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = chileprotests, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = womensday, colour = colpublicneg, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Chile", limits=c(-30,80))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = chileprotests, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = womensday, colour = colpublicneg, linetype=2)+
+  theme(axis.title.y.left = element_blank(), legend.position="none")
+plotchl <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+```
+
+\newpage
+
+# Ecuador
+
+```{r, Ecuador, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="ecu") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -30; yt = -26
+
+plotlines <- plotTS(df, mode="percent", title="Ecuador", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+plotlines <- plotTS(df, mode="percent", title="Ecuador", limits=c(-30,80))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.left= element_blank(), legend.position="none")
+plotecu <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+```
+
+\newpage
+
+# Peru
+
+```{r, Peru,  fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="per") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -25; yt = -22
+
+plotlines <- plotTS(df, mode="percent", title="Peru", limits=NULL, factor=7)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+
+plotlines <- plotTS(df, mode="percent", title="Peru", limits=c(-25,50), factor=7)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  theme(axis.title.y.right= element_blank(), legend.position="none")
+plotper <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+```
+
+\newpage
+
+# Mexico
+
+Events
+
+* Green: Protests against violence against women after the murder of Ingrid Escamilla and Fátima Aldrighett
+
+```{r, Mexico, fig.width=10, fig.height=6, cache=TRUE}
+all %>%
+  filter(country=="mex") %>%
+  filter(date > as.Date("2020-01-01")) -> df
+
+womenviolence <- as.Date("2020-02-18")
+strike <- as.Date("2020-03-09")
+
+#dates for lockdown and testing periods
+lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
+date1 <- as.Date(df$date[df$confirmed>=30][1])
+date2 <- as.Date(date1 +7); date3 <- as.Date(date2+7); date4 <- as.Date(date3+7); date5 <- as.Date(date4+7); enddate <- as.Date(date5+7)
+yb = -25; yt = -22
+
+plotlines <- plotTS(df, mode="percent", title="Mexico", limits=NULL)+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = womenviolence, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = strike, colour = colpublicneg, linetype=2)
+
+addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+#plot for paper
+
+plotlines <- plotTS(df, mode="percent", title="Mexico", limits=c(-25,50))+
+  geom_vline(xintercept = as.numeric(lockdown), colour = collockdown, linetype=2)+
+  geom_vline(xintercept = womenviolence, colour = colpublicneg, linetype=2)+
+  geom_vline(xintercept = strike, colour = colpublicneg, linetype=2)+
+
+  theme(axis.title.y.left= element_blank(), legend.position="none")
+plotmex <- addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
+
+(df %>% group_by(wordlist) %>% summarize(meanpr = mean(pr), sdpr = sd(pr), meanbl = mean(bl), meancilow = mean(prlow), meancihigh = mean(prhigh)))
+
+```
+
+\newpage
+
+# Combined country figures
+## Example countries for Figure 1: Italy, Spain, US, Germany
+
+```{r, Figure 1 example countries timeline, fig.width=12, fig.height=10, warning=FALSE, cache=TRUE}
+cowplot::plot_grid(plotita, plotger, plotesp, plotusa, ncol=2,hjust=0, vjust =1)
+ggsave('figures/Figure1_countriesR.pdf', width=12, height=10, dpi=300)
+
+```
+
+## Countries for Supplementary Fig S1: Other European countries
+
+```{r, Figure S1 example countries timeline, fig.width=12, fig.height=20, warning=FALSE, cache=TRUE}
+
+cowplot::plot_grid(plotaut, plotche, plotnet, plotbel, plotuk, plotire, plotfra, ncol=2,hjust=0, vjust =1)
+ggsave('figures/FigureS1_countriesR.pdf', width=12, height=17, dpi=300)
+      ```
+
+## Countries for Supplementary Fig S2: Other non-European countries
+
+```{r, Figure S2 example countries timeline, fig.width=12, fig.height=20, warning=FALSE, cache=TRUE}
+
+cowplot::plot_grid(plotnzl, plotaus, plotcan, plotecu, plotper, plotmex, plotchl, ncol=2,hjust=0, vjust =1)
+ggsave('figures/FigureS2_countriesR.pdf', width=12, height=17, dpi=300)
+
+```
+
+\newpage
+
+
+
+# Country comparison: percentage change in 5 weeks since Covid-19 outbreak vs. the baseline (Figure 2 )
+
+```{r, Subplots Figure 2 country comparison, fig.width=3.5, fig.height=4.5, warning=FALSE}
+#load dataset with means since day with 30 cases
+all <- read.csv("data_main/Outbreak-30-Levels.csv")
+all <- all %>%
+  mutate(country = dplyr::recode(country, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand"))
+
+f <- all$wordlist=="anxiety"
+seldf <- data.frame(country=all$country[f],
+                    anx = 100*(all$pr[f]-all$bl[f])/all$bl[f],
+                    anx_low = 100*(all$low[f]-all$bl[f])/all$bl[f],
+                    anx_high = 100*(all$high[f]-all$bl[f])/all$bl[f])
+f <- all$wordlist=="sadness"
+seldf <- cbind(seldf, data.frame(sad = 100*(all$pr[f]-all$bl[f])/all$bl[f],
+                                 sad_low = 100*(all$low[f]-all$bl[f])/all$bl[f],
+                                 sad_high = 100*(all$high[f]-all$bl[f])/all$bl[f]))
+f <- all$wordlist=="anger"
+seldf <- cbind(seldf, data.frame(ang = 100*(all$pr[f]-all$bl[f])/all$bl[f],
+                                 ang_low = 100*(all$low[f]-all$bl[f])/all$bl[f],
+                                 ang_high = 100*(all$high[f]-all$bl[f])/all$bl[f]))
+f <- all$wordlist=="positive"
+seldf <- cbind(seldf, data.frame(pos = 100*(all$pr[f]-all$bl[f])/all$bl[f],
+                                 pos_low = 100*(all$low[f]-all$bl[f])/all$bl[f],
+                                 pos_high = 100*(all$high[f]-all$bl[f])/all$bl[f]))
+
+meananx <- ggplot(data = seldf,aes(x=reorder(country, anx), y = anx)) +
+  geom_bar(stat = "identity",fill="orange", alpha=0.5, width=0.85)+
+  geom_errorbar(aes(ymin = anx_low,ymax = anx_high), width=0.5, size=0.8, col="orange") +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="bottom", plot.margin = margin(1, 0.5, 0.2, 0.5, "cm"), panel.grid.minor=element_blank())+
+  ylab("Anxiety % change")+
+  xlab("")+
+  geom_hline(yintercept = 0, colour = "grey50")+
+  scale_y_continuous(limits = range(seldf[,2:13]),
+                     breaks = seq(floor((min(seldf[,2:13]))), ceiling(max(seldf[,2:13])), by=10))+
+  coord_flip()
+
+meanang <- ggplot(data = seldf,aes(x=reorder(country, ang), y = ang)) +
+  geom_bar(stat = "identity", fill="red", alpha=0.5, width=0.85)+
+  geom_errorbar(aes(ymin = ang_low,ymax = ang_high), width=0.5, size=0.8, col="red") +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="bottom", plot.margin = margin(1, 0.5, 0.2, 0.5, "cm"), panel.grid.minor=element_blank())+
+  ylab("Anger % change")+
+  xlab("")+
+  geom_hline(yintercept = 0, colour = "grey50")+
+  scale_y_continuous(limits = range(seldf[,2:13]),
+                     breaks = seq(floor((min(seldf[,2:13]))), ceiling(max(seldf[,2:13])), by=10))+
+  coord_flip()
+
+
+meansad <- ggplot(data = seldf,aes(x=reorder(country, sad), y = sad)) +
+  geom_bar(stat = "identity", fill="blue", alpha=0.5, width=0.85)+
+  geom_errorbar(aes(ymin = sad_low,ymax = sad_high), width=0.5, size=0.8, col="blue") +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="bottom", plot.margin = margin(1, 0.5, 0.2, 0.5, "cm"), panel.grid.minor=element_blank())+
+  ylab("Sadness % change")+
+  xlab("")+
+  geom_hline(yintercept = 0, colour = "grey50")+
+  scale_y_continuous(limits = range(seldf[,2:13]),
+                     breaks = seq(floor((min(seldf[,2:13]))), ceiling(max(seldf[,2:13])), by=10))+
+  coord_flip()
+
+meanpos <- ggplot(data = seldf,aes(x=reorder(country, pos), y = pos)) +
+  geom_bar(stat = "identity", fill="cyan", alpha=0.25, width=0.85)+
+  geom_errorbar(aes(ymin = pos_low,ymax = pos_high), width=0.5, size=0.8, col="cyan") +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
+                    legend.position="bottom", plot.margin = margin(1, 0.5, 0.2, 0.5, "cm"), panel.grid.minor=element_blank())+  ylab("Positive % change")+
+  xlab("")+
+  geom_hline(yintercept = 0, colour = "grey50")+
+  scale_y_continuous(limits = range(seldf[,2:13]),
+                     breaks = seq(floor((min(seldf[,2:13]))), ceiling(max(seldf[,2:13])), by=10))+
+  coord_flip()
+```
+
+```{r, Figure2 Mean change after outbreak per country, fig.width=9, fig.height=8, warning=FALSE, cache=TRUE}
+
+plotmeans <- cowplot::plot_grid(meananx, meansad, meanang, meanpos, labels=c("a", "b", "c", "d"), label_size=25, vjust = 1); plotmeans
+
+ggsave('figures/Figure2_meanchange_countriesR.pdf', width=9, height=8, dpi=300)
+```
+
+
+
+# 5 weeks after outbreak: Logistic regression with contrast against baseline
+
+## Anxiety
+
+```{r, 5 week model anxiety, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+all <- read.csv("data_main/AfterOutbreak-Weeks-5.csv")
+plotdf <- NULL
+
+emo <- "anxiety"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+#run the model
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+sm <- summary(model)
+
+#print model output
+smanx_week <- sm; smanx_week
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(broom.mixed::tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/anx_model_week.csv', row.names=F)
+
+plotdf
+
+# #print model output table for Supplementary - does not work when knitting a pdf, only inside R
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "P(Tweet contains anxiety-terms)",
+#           title = "Anxiety: Logistic regression with contrasts against baseline",
+#           pred.labels= c("Intercept", "Control", "Week 1", "Week 2", "Week 3", "Week 4", "Week5"),  file='output/TableS3_model_anxiety_week.doc')
+
+coefanx <- ggplot(data=plotdf, aes(x=week, y=coefficient), position=position_dodge(width=1)) +
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="orange", size=1) +
+  geom_bar(stat="identity", colour="orange", fill=scales::alpha("orange", 0.2), size=1) +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Anxiety coefficient (log OR)")+
+  scale_y_continuous(limits=c(-0.12,0.30))
+
+```
+
+## Sadness
+
+```{r, 5 week model sadness, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+plotdf <- NULL
+
+emo <- "sadness"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+sm <- summary(model)
+
+
+#print model output
+smsad_week <- sm; smsad_week
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/sad_model_week.csv', row.names=F)
+
+plotdf
+
+
+# #print table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "P(Tweet contains sadness-terms)",
+#           title = "Sadness: Logistic regression with contrasts against baseline",
+#           pred.labels= c("Intercept", "Control", "Week 1", "Week 2", "Week 3", "Week 4", "Week5"),
+#         file='output/TableS5_model_sadness_week.doc')
+
+coefsad <- ggplot(data=plotdf, aes(x=week, y=coefficient), position=position_dodge(width=1)) +
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="blue", size=1) +
+  geom_bar(stat="identity", colour="blue", fill=scales::alpha("blue", 0.2), size=1) +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Sadness coefficient (log OR)")+
+  scale_y_continuous(limits=c(-0.12,0.30))
+
+```
+
+## Anger
+
+```{r, 5 week model anger, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+
+plotdf <- NULL
+
+emo <- "anger"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+sm <- summary(model)
+
+#print model output
+smanger_week <- sm; smanger_week
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/anger_model_week.csv', row.names=F)
+
+plotdf
+
+# #print table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "P(Tweet contains anger-terms)",
+#           title = "Anger: Logistic regression with contrasts against baseline",
+#           pred.labels= c("Intercept", "Control", "Week 1", "Week 2", "Week 3", "Week 4", "Week5"),
+#         file='output/TableS7_model_anger_week.doc')
+
+coefang <- ggplot(data=plotdf, aes(x=week, y=coefficient), position=position_dodge(width=1)) +
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="red", size=1) +
+  geom_bar(stat="identity", colour="red", fill=scales::alpha("red", 0.2), size=1) +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(), plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Anger coefficient (log OR)")+
+  scale_y_continuous(limits=c(-0.12,0.30))
+```
+
+## Positive Emotions
+
+```{r, 5 week model positive, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+
+plotdf <- NULL
+
+emo <- "positive"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+
+sm <- summary(model)
+
+#print model output
+smpos_week <- sm; smpos_week
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/pos_model_week.csv', row.names=F)
+
+plotdf
+
+# #print table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "P(Tweet contains positive terms)",
+#           title = "Positive Emotions: Logistic regression with contrasts against baseline",
+#           pred.labels= c("Intercept", "Control", "Week 1", "Week 2", "Week 3", "Week 4", "Week5"),
+#         file='output/TableS9_model_positive_week.doc')
+
+coefpos <- ggplot(data=plotdf, aes(x=week, y=coefficient), position=position_dodge(width=1)) +
+  geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="cyan", size=1 ) +
+  geom_bar(stat="identity", colour="cyan", fill=scales::alpha("cyan", 0.2), size=1) +
+  theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize),
+                    axis.title.x=element_blank(),plot.margin = margin(1, 0.6, 0.5, 0.6, "cm"))+
+  geom_hline(yintercept = 0, colour = "grey50", lty=1)+
+  xlab("Period")+ ylab("Positive coefficient (log OR)")+
+  scale_y_continuous(limits=c(-0.12,0.30))
+
+```
+
+
+# Figure 3: Regression coefficients for each emotion and time period
+
+```{r, Figure 3 - 5 week model figure coefficients, fig.width=9, fig.height=8, warning=FALSE, cache=TRUE}
+
+plotcoef <- cowplot::plot_grid(coefanx, coefsad, coefang, coefpos, labels=c("a", "b", "c", "d"), label_size=25, vjust = 1); plotcoef
+
+ggsave('figures/Figure3_coefficients_allemotions_5weeksR.pdf', width=9, height=8, dpi=300)
+```
+
+# 5 weeks after outbreak: Logistic regression with contrast against previous period
+
+## Anxiety
+
+```{r, 5 week model anxiety change, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+plotdf <- NULL
+
+emo <- "anxiety"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+#repeatedcontrast: compare each period to the previous one
+repcontrasts <- as.data.frame(matrix(data =
+                                       c(-6/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7,
+                                         -5/7, -5/7, 2/7, 2/7, 2/7, 2/7, 2/7,
+                                         -4/7, -4/7, -4/7, 3/7, 3/7, 3/7, 3/7,
+                                         -3/7, -3/7, -3/7, -3/7, 4/7, 4/7, 4/7,
+                                         -2/7, -2/7, -2/7, -2/7, -2/7, 5/7,  5/7,
+                                         -1/7, -1/7, -1/7, -1/7, -1/7, -1/7, 6/7) , nrow = 7, ncol=6))
+names(repcontrasts) <- c("control", "Week 1", "Week 2", "Week 3","Week 4","Week 5")
+contrasts(df$period,6) <- as.matrix(repcontrasts)
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+sm <- summary(model)
+smanx_week_change <- sm; smanx_week_change
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/anx_model_change.csv', row.names=F)
+
+plotdf
+
+
+
+# #print model output table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "Change of P(Tweet contains anxiety-terms)",
+#           title = "Anxiety: Logistic regression with contrasts against previous period",
+#           pred.labels= c("Intercept", "Baseline - Control", "Control - Week 1", "Week 1 - Week 2", "Week 2 - Week 3", "Week 3 - Week 4", "Week 4 - Week5"),
+#         file='output/TableS4_model_anxiety_change.doc')
+
+```
+
+## Sadness
+
+```{r, 5 week model sadness change, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+plotdf <- NULL
+
+emo <- "sadness"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+#repeatedcontrast: compare each period to the previous one
+repcontrasts <- as.data.frame(matrix(data =
+                                       c(-6/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7,
+                                         -5/7, -5/7, 2/7, 2/7, 2/7, 2/7, 2/7,
+                                         -4/7, -4/7, -4/7, 3/7, 3/7, 3/7, 3/7,
+                                         -3/7, -3/7, -3/7, -3/7, 4/7, 4/7, 4/7,
+                                         -2/7, -2/7, -2/7, -2/7, -2/7, 5/7,  5/7,
+                                         -1/7, -1/7, -1/7, -1/7, -1/7, -1/7, 6/7) , nrow = 7, ncol=6))
+names(repcontrasts) <- c("control", "Week 1", "Week 2", "Week 3","Week 4","Week 5")
+contrasts(df$period, 6) <- as.matrix(repcontrasts)
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+
+sm <- summary(model)
+smsad_week_change <- sm; smsad_week_change
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/sad_model_change.csv', row.names=F)
+
+plotdf
+
+# #print model output table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "Change of P(Tweet contains sadness-terms)",
+#           title = "Sadness: Logistic regression with contrasts against previous period",
+#           pred.labels= c("Intercept", "Baseline - Control", "Control - Week 1", "Week 1 - Week 2", "Week 2 - Week 3", "Week 3 - Week 4", "Week 4 - Week5"),
+#         file='output/TableS6_model_sadness_change.doc')
+
+```
+
+## Anger
+
+```{r, 5 week model anger change, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+
+plotdf <- NULL
+
+emo <- "anger"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+#repeatedcontrast: compare each period to the previous one
+repcontrasts <- as.data.frame(matrix(data =
+                                       c(-6/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7,
+                                         -5/7, -5/7, 2/7, 2/7, 2/7, 2/7, 2/7,
+                                         -4/7, -4/7, -4/7, 3/7, 3/7, 3/7, 3/7,
+                                         -3/7, -3/7, -3/7, -3/7, 4/7, 4/7, 4/7,
+                                         -2/7, -2/7, -2/7, -2/7, -2/7, 5/7,  5/7,
+                                         -1/7, -1/7, -1/7, -1/7, -1/7, -1/7, 6/7) , nrow = 7, ncol=6))
+names(repcontrasts) <- c("control", "Week 1", "Week 2", "Week 3","Week 4","Week 5")
+contrasts(df$period, 6) <- as.matrix(repcontrasts)
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+
+sm <- summary(model)
+smanger_week_change <- sm; smanger_week_change
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/anger_model_change.csv', row.names=F)
+
+plotdf
+
+
+# #print model output table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "Change of P(Tweet contains anger-terms)",
+#           title = "Anger: Logistic regression with contrasts against previous period",
+#           pred.labels= c("Intercept", "Baseline - Control", "Control - Week 1", "Week 1 - Week 2", "Week 2 - Week 3", "Week 3 - Week 4", "Week 4 - Week5"),
+#         file='output/TableS8_model_anger_change.doc')
+```
+
+## Positive Emotions
+
+```{r, 5 week model positive change, fig.width=4.5, fig.height=4, warning=FALSE, cache=TRUE}
+
+plotdf <- NULL
+
+emo <- "positive"
+f <- all$wordlist==emo
+
+df <- data.frame(country=all$country[f],
+                 period = relevel(as.factor(all$period[f]), ref="baseline"),
+                 hits = all$emo_n[f],
+                 tries = all$tot_n[f])
+
+#downsample to a daily measure
+df$hits[df$period=="baseline"] <- round((df$hits[df$period=="baseline"]/365*7))
+df$tries[df$period=="baseline"] <- round((df$tries[df$period=="baseline"]/365*7))
+df$hits[df$period=="control"] <- round((df$hits[df$period=="control"]/31*7))
+df$tries[df$period=="control"] <- round((df$tries[df$period=="control"]/31*7))
+df$hits[df$period!="baseline" & df$period!="control"] <- round((df$hits[df$period!="baseline" & df$period!="control"]))
+df$tries[df$period!="baseline" & df$period!="control"] <- round((df$tries[df$period!="baseline" & df$period!="control"]))
+
+df$misses <- df$tries-df$hits
+
+#repeatedcontrast: compare each period to the previous one
+repcontrasts <- as.data.frame(matrix(data =
+                                       c(-6/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7,
+                                         -5/7, -5/7, 2/7, 2/7, 2/7, 2/7, 2/7,
+                                         -4/7, -4/7, -4/7, 3/7, 3/7, 3/7, 3/7,
+                                         -3/7, -3/7, -3/7, -3/7, 4/7, 4/7, 4/7,
+                                         -2/7, -2/7, -2/7, -2/7, -2/7, 5/7,  5/7,
+                                         -1/7, -1/7, -1/7, -1/7, -1/7, -1/7, 6/7) , nrow = 7, ncol=6))
+names(repcontrasts) <- c("control", "Week 1", "Week 2", "Week 3","Week 4","Week 5")
+contrasts(df$period, 6) <- as.matrix(repcontrasts)
+
+model <- glmer(cbind(hits, misses) ~ period + (period|country), family=binomial, data=df,
+               control=glmerControl(optCtrl=list(maxfun=100000),optimizer = "bobyqa", nAGQ = 10))
+
+sm <- summary(model)
+smpos_week_change <- sm; smpos_week_change
+
+# table with coefficients and Wald z-tests
+plotdf <- as.data.frame(tidy(model))[2:7,] %>%
+  rename(week = term,
+         coefficient = estimate,
+         z = statistic,
+         p = p.value) %>%
+  select(week, coefficient, z, p) %>%
+  mutate(week = factor(week, labels = c("control", "week 1", "week 2", "week 3", "week 4", "week 5")))
+
+cis <- confint(model, method="Wald")
+
+#add CIs and odds ratios to table
+plotdf$cilow <- cis[30:35,1]
+plotdf$cihigh <- cis[30:35,2]
+plotdf$OR <- exp(plotdf$coef) #odds ratio
+
+plotdf$p <- round(plotdf$p, 3)
+plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")] <- apply(plotdf[,c("coefficient", "z", "cilow", "cihigh", "OR")], 2, round, digits=2)
+plotdf <- plotdf %>%
+  select(week, coefficient, cilow, cihigh, z, p, OR)
+write.csv2(plotdf, 'output/pos_model_change.csv', row.names=F)
+
+plotdf
+
+# #print model output table for Supplementary - does not work when knitting a pdf
+# tab_model(model, transform = NULL, show.r2 = F, show.stat = T, string.stat = "z", show.obs=F,
+#           dv.labels = "Change of P(Tweet contains positive terms)",
+#           title = "Positive emotions: Logistic regression with contrasts against previous period",
+#           pred.labels= c("Intercept", "Baseline - Control", "Control - Week 1", "Week 1 - Week 2", "Week 2 - Week 3", "Week 3 - Week 4", "Week 4 - Week5"),
+#         file='output/TableS10_model_positive_change.doc')
+
+```
+
+\newpage
+
+# Number of days with sustained levels above or below the baseline
+
+```{r}
+#read data
+duration <- read.csv("data_main/Duration.csv")
+duration <-  duration %>%
+  mutate(wordlist = factor(wordlist),
+         separdate = relevel(factor(separdate), "Before"),
+         country = factor(country))
+# emotion labels to title case
+levels(duration$wordlist) = with(duration, stringr::str_to_title(levels(wordlist)))
+
+#which countries are still continuing?
+lasting <- duration %>%
+  filter(separdate == "After") %>%
+  group_by(country, wordlist) %>%
+  slice(n()) %>%
+  filter(ndays > 10) %>%
+  ungroup()
+```
+
+
+## Anxiety and Sadness in one plot
+```{r,  duration anx sad, fig.width = 10, fig.height=5}
+dfdays=  subset(duration, wordlist=="Anxiety" | wordlist=="Sadness") %>%
+  filter(!notzero=="zero") #keep only time periods above or below zero, exclude those around zero
+
+ggplot()+
+  #boxplot only for the before period
+  geom_boxplot(data=subset(dfdays, separdate=="Before"), aes(y=ndays, x = (country), colour=separdate), position="identity", show.legend=F)+#, colour = "grey50")+
+  #maximal duration value for both periods
+  geom_point(data=dfdays, aes(y=maxdays, x=(country), colour=separdate), fill="white", shape=21, stroke=1)+
+  facet_wrap(~wordlist)+
+  ylab("N days in a row")+  scale_y_continuous(limits=c(0,45))+
+  #colour for the boxplot
+  scale_colour_manual(values=c("Before"="grey50", "After"="red"), name="", guide=guide_legend(title.position="right"), labels=c("After first case", "Before first case"))+
+  theme_bw()+ theme(text=element_text(size=axisfontsize), strip.text=element_text(size=axisfontsize),#axis.text=element_text(size=10),
+                    axis.text.x=element_text(angle=45, hjust=1), axis.title.x=element_blank(), #axis.ticks.x=element_blank(),
+                    legend.position=c(0.38,0.88), legend.direction="vertical",#
+                    panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("figures/Figure5_ndays_anxiety_sadness_beyond1madR.pdf", width = 10, height=5)
+
+```
+
+## Anger and positive emotions in one plot
+
+```{r, duration anger positive,  fig.width = 10, fig.height=5}
+dfdays=  subset(duration, wordlist=="Anger" | wordlist=="Positive") %>%
+  filter(!notzero=="zero") #keep only ti    me periods above or below zero, exclude those around zero
+
+ggplot()+
+  #boxplot only for the before period
+  geom_boxplot(data=subset(dfdays, separdate=="Before"), aes(y=ndays, x = (country), colour=separdate), position="identity", show.legend=F)+#, colour = "grey50")+
+  #maximal duration value for both periods
+  geom_point(data=dfdays, aes(y=maxdays, x=(country), colour=separdate), fill="white", shape=21, stroke=1)+
+  facet_wrap(~wordlist)+
+  ylab("N days in a row")+   scale_y_continuous(limits=c(0,45))+
+  #colour for the boxplot
+  scale_colour_manual(values=c("Before"="grey50", "After"="red"), name="", guide=guide_legend(title.position="right"), labels=c("After first case", "Before first case"))+
+  theme_bw()+ theme(text=element_text(size=axisfontsize), strip.text=element_text(size=axisfontsize),#axis.text=element_text(size=10),
+                    axis.text.x=element_text(angle=45, hjust=1), axis.title.x=element_blank(), #axis.ticks.x=element_blank(),
+                    legend.position=c(0.42,0.88), legend.direction="vertical",#
+                    panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+ggsave("figures/FigureS4_ndays_angerpositive_beyond1madR.pdf", width = 10, height=5)
+```

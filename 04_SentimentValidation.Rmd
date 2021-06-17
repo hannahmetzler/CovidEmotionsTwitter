@@ -1,0 +1,264 @@
+---
+title: "Testing correlations between sentiment analysis aggregates"
+author: "Hannah Metzler & David Garcia"
+output:
+  pdf_document
+url_colour: blue
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warnings=FALSE)
+```
+
+```{r, libraries, results='hide'}
+library(tidyverse)
+library(plotly)
+library(lubridate)
+library(cowplot)
+library(gridExtra)
+library(boot)
+```
+
+# Comparing LIWC and RoBERTa
+
+For RoBERTa scores, only tweets with a likelihood of above 0.9 of expressing that emotion (as labelled by humans) are counted as hits for that emotion. 
+
+## USA
+
+```{r}
+RobertaDF <- read.csv("data_roberta/USRoberta.csv") 
+LIWCDF <- read.csv("data_main/CountriesData.csv")
+LIWCDF %>% filter(country=="usa")-> LIWCDF
+
+plotDF = RobertaDF %>% 
+  rename("anxiety" = "fear") %>% #same name as the LIWC wordlist
+  #transform to long format
+  gather(key = "wordlist", value = "RoBERTa", "anger", "anxiety", "positive", "sadness") %>% 
+  #add LIWC df
+  inner_join(LIWCDF) %>% 
+  rename("LIWC" = pr, 
+         "emotion" = wordlist) %>% #in roberta its not a wordlist, but a predicted label
+  mutate(RoBERTa = RoBERTa*100) %>% 
+  mutate(date = as.Date(date))
+```
+
+
+```{r, scatterplot LIWC Roberta US, fig.asp = 1}
+svanx = ggplot(data = filter(plotDF, emotion=="anxiety"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="orange")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Anxiety")+
+  labs(x="LIWC")
+svsad = ggplot(data = filter(plotDF, emotion=="anger"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="red")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Anger")
+svang = ggplot(data = filter(plotDF, emotion=="sadness"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="blue")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Sadness")
+svpos = ggplot(data = filter(plotDF, emotion=="positive"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="cyan")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Positive")
+
+sv_us = cowplot::plot_grid(svanx,  svang, svsad, svpos, ncol=2, vjust = 1, align = "hv"); #labels=c("a", "b", "c", "d"), label_size=25, 
+sv_us 
+ggsave("./figures/sentimentvalidation_USA.pdf", plot=sv_us)
+```
+
+## Correlation tests
+
+Both Pearson and Spearman, given that there are quite a few outliers in the plots above that likely influence the correlation
+* Variable "pr" is the percentage of tweets with LIWC words (uncorrected for the baseline)
+* The variable name that is an emotion (fear, anger, sadness, pos) is the RoBERTa score. 
+
+```{r}
+LIWCDF %>% filter(wordlist=="anxiety") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$fear, method="pearson")
+cor.test(df1$pr, df1$fear, method="spearman")
+
+LIWCDF %>% filter(wordlist=="sadness") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$sadness, method="pearson")
+cor.test(df1$pr, df1$sadness, method="spearman")
+
+LIWCDF %>% filter(wordlist=="anger") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$anger, method="pearson")
+cor.test(df1$pr, df1$anger, method="spearman")
+
+LIWCDF %>% filter(wordlist=="positive") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$pos, method="pearson")
+cor.test(df1$pr, df1$pos, method="spearman")
+```
+
+Correlations for a paper: 
+
+US anxiety r=0.64 t(475) = 18.1, p < 0.001
+US sadness r=0.71, t(475) = 21.84, p < 0.001
+US anger r=0.73, t(475) = 23.48, p < 0.001
+US positive r=0.42, t(475) = 10.21, p < 0.001
+
+### Time series
+
+```{r}
+#plot
+ggplot() +
+  geom_line(data = plotDF, aes(x=date, y=RoBERTa, colour=emotion))+
+  geom_line(data = plotDF, aes(x=date, y=LIWC, colour=emotion), linetype=2, show.legend=T)+
+  # ylab("% Difference over 2019 baseline") +  ggtitle("US state comparison")+ #plot title
+  scale_colour_manual(values = c("anxiety"="orange", "anger"="red", "sadness"="blue", "positive"="cyan"))+
+   theme_bw()+ theme(
+                    axis.title.x = element_blank(),
+                    legend.title=element_blank(), legend.position="bottom",
+                    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"))+
+  scale_x_date(date_breaks="1 month", date_labels = "%b")+
+  scale_y_continuous(name = "% tweets RoBERTa", sec.axis = dup_axis(name="% tweets LIWC"))
+```
+
+
+## Spain
+
+```{r}
+RobertaDF <- read.csv("data_roberta/ESRoberta.csv")
+LIWCDF <- read.csv("data_main/CountriesData.csv")
+LIWCDF %>% filter(country=="esp") -> LIWCDF
+
+plotDF = RobertaDF %>% 
+  rename("anxiety" = "fear") %>% #same name as the LIWC wordlist
+  #transform to long format
+  gather(key = "wordlist", value = "RoBERTa", "anger", "anxiety", "positive", "sadness") %>% 
+  #add LIWC df
+  inner_join(LIWCDF) %>% 
+  rename("LIWC" = pr, 
+         "emotion" = wordlist) %>% #in roberta its not a wordlist, but a predicted label
+  mutate(RoBERTa = RoBERTa*100) %>% 
+    mutate(date = as.Date(date))
+```
+
+```{r, scatterplot LIWC Roberta Spain, fig.asp = 1}
+
+svanx = ggplot(data = filter(plotDF, emotion=="anxiety"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="orange")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Anxiety")
+svsad = ggplot(data = filter(plotDF, emotion=="anger"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="red")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Anger")
+svang = ggplot(data = filter(plotDF, emotion=="sadness"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="blue")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Sadness")
+svpos = ggplot(data = filter(plotDF, emotion=="positive"), aes(x = LIWC, y =RoBERTa)) +
+  geom_smooth( method = "lm", color="gray", alpha=0.3, se = F, linetype=2) +
+  geom_point(size=2, colour="cyan")+
+   theme_bw()+ theme(text=element_text(size=12), axis.text=element_text(size=12), legend.title=element_blank(), legend.position="right")+ggtitle("Positive")
+
+sv_esp = cowplot::plot_grid(svanx,  svang, svsad, svpos, ncol=2,  vjust = 1, align="hv"); #labels=c("a", "b", "c", "d"), label_size=25,
+sv_esp
+ggsave("./figures/sentimentvalidation_spain.pdf", plot=sv_esp)
+```
+
+Correlation tests: Both Pearson and Spearman, given that there are quite a few outliers in the plots above that likely influence the correlation 
+
+```{r}
+LIWCDF %>% filter(wordlist=="anxiety") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$fear, method="pearson")
+cor.test(df1$pr, df1$fear, method="spearman")
+
+LIWCDF %>% filter(wordlist=="sadness") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$sadness, method="pearson")
+cor.test(df1$pr, df1$sadness, method="spearman")
+
+LIWCDF %>% filter(wordlist=="anger") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$anger, method="pearson")
+cor.test(df1$pr, df1$anger, method="spearman")
+
+LIWCDF %>% filter(wordlist=="positive") -> df1
+df1 <- inner_join(RobertaDF, df1, by="date")
+cor.test(df1$pr, df1$pos, method="pearson")
+cor.test(df1$pr, df1$pos, method="spearman")
+```
+
+### Time series
+
+```{r}
+#plot
+ggplot() +
+  geom_line(data = plotDF, aes(x=date, y=RoBERTa, colour=emotion))+
+  geom_line(data = plotDF, aes(x=date, y=LIWC, colour=emotion), linetype=2, show.legend=T)+
+  # ylab("% Difference over 2019 baseline") +  ggtitle("US state comparison")+ #plot title
+  scale_colour_manual(values = c("anxiety"="orange", "anger"="red", "sadness"="blue", "positive"="cyan"))+
+   theme_bw()+ theme(
+                    axis.title.x = element_blank(),
+                    legend.title=element_blank(), legend.position="bottom",
+                    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"))+
+  scale_x_date(date_breaks="1 month", date_labels = "%b")+
+  scale_y_continuous(name = "% tweets RoBERTa", sec.axis = dup_axis(name="% tweets LIWC"))
+```
+
+Correlations for a paper: 
+
+Spain anxiety r=0.37, t(472) = 8.75, p < 0.001
+Spain sadness r=0.42, t(472) = 10.06, p < 0.001
+Spain anger r=0.70, t(472) = 21.07, p < 0.001
+Spain positive r=0.64, t(472) = 18.22, p < 0.001
+
+# Roberta for different follower thresholds
+
+## US
+
+### Correlations of RoBERTa in sample of tweets excluding above 50.000 or 100.000 followers, with 5000 followers
+
+```{r}
+RobertaDF <- read.csv("data_roberta/USRoberta.csv")
+RobertaDF5K <- read.csv("data_roberta/USRoberta-5K.csv")
+cor.test(RobertaDF$anger, RobertaDF5K$anger)
+cor.test(RobertaDF$fear, RobertaDF5K$fear)
+cor.test(RobertaDF$positive, RobertaDF5K$positive)
+cor.test(RobertaDF$sadness, RobertaDF5K$sadness)
+```
+
+### Correlations of RoBERTa in sample of tweets excluding above 50.000 or 100.000 followers, with 2000 followers
+
+```{r}
+RobertaDF2K <- read.csv("data_roberta/USRoberta-2K.csv")
+cor.test(RobertaDF$anger, RobertaDF2K$anger)
+cor.test(RobertaDF$fear, RobertaDF2K$fear)
+cor.test(RobertaDF$positive, RobertaDF2K$positive)
+cor.test(RobertaDF$sadness, RobertaDF2K$sadness)
+```
+
+## Spain
+
+### Correlations of RoBERTa in sample of tweets excluding above 50.000 or 100.000 followers, with 5000 followers
+
+```{r}
+RobertaDF <- read.csv("data_roberta/ESRoberta.csv")
+RobertaDF5K <- read.csv("data_roberta/ESRoberta-5K.csv")
+cor.test(RobertaDF$anger, RobertaDF5K$anger)
+cor.test(RobertaDF$fear, RobertaDF5K$fear)
+cor.test(RobertaDF$positive, RobertaDF5K$positive)
+cor.test(RobertaDF$sadness, RobertaDF5K$sadness)
+```
+
+### Correlations of RoBERTa in sample of tweets excluding above 50.000 or 100.000 followers, with 2000 followers
+
+```{r}
+RobertaDF2K <- read.csv("data_roberta/ESRoberta-2K.csv")
+cor.test(RobertaDF$anger, RobertaDF2K$anger)
+cor.test(RobertaDF$fear, RobertaDF2K$fear)
+cor.test(RobertaDF$positive, RobertaDF2K$positive)
+cor.test(RobertaDF$sadness, RobertaDF2K$sadness)
+```
+
+
+

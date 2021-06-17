@@ -1,0 +1,1824 @@
+---
+title: "Collective Emotions during the Covid-19 Outbreak\n\n\nSupplementary Information 2\n\n\nWord frequencies in tweets\n\n\n"
+author: "Hannah Metzler & David Garcia"
+output:
+    html_document: default
+    output: bookdown::html_document2
+    
+    #to get a pdf of this markdown: print to html, and then print as pdf from the browser (otherwise the emoji don't work)
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warnings=FALSE, comment = "")
+```
+
+```{r, libraries, results='hide'}
+library(tidyverse)
+library(rjson)
+library(patchwork)
+library(cowplot)
+```
+
+<!-- formatting the html -->
+
+<style type="text/css">
+
+h1.title {
+  text-align: center;
+}
+h2 {
+  font-size: 30px;
+}
+h4.author {
+  text-align: center;
+}
+
+</style>
+
+___
+
+
+## Methods
+
+We use word frequency plots of the 60 most frequent terms to check that there are no strange outlier words that drive the changes we observe. If tweets repeatedly using an LIWC term in the wrong context were very frequent, other non-emotional words from these tweets would indicate this problem. (Example: high frequencies of the term "lov*" together with "McDonalds" would indicate that the sentence "i am lovin it, McDonalds" influenced our tweet count for positive emotions.) Therefore, we used word frequency plots on all words, rather than just LIWC terms. 
+
+We made one plot per language, emotion and time period, including the baseline, and the outbreak period of 5 weeks after the day with 30 cases. The baseline period plots provide an overall idea of what each dictionary picks up on in general, independent from a particular event, while plots for the outbreak period show which particular words became more frequent in relation to Covid-19.<!-- (- We could use the control period to check if the year 2020 is comparable to the baseline, to see the more immediate change in words from pre to post covid in 2020.) --> We chose the following example countries for each language: 
+
+* German: Germany
+* English: United Kingdom
+* Dutch: Netherlands
+* French: France
+* Italian: Italy
+* Spanish: Spain
+
+We inspected which *topics* people were emotional about (i.e. non-LIWC terms that occur frequently), and which of the *LIWC terms* were most frequent, i.e. importantly adding to the number of emotional tweets. Here, disproportionally large contributions by single words would indicate problems, such as one single event strongly impacting this number, without necessarily reflecting a general change in emotions. An example from outside the analyzed time periods is the word "terror" accounting for a large propotion of anxiety and anger spikes after the attack in Hanau in German and Austrian tweets. If most words only occur in a few percent of tweets, this indicates that LIWC words that misfired during specific events or in a context that does not reflect the emotio did not strongly bias our emotion measures. 
+
+<!-- In the script below, all parts calculating and plotting the frequency difference between the baseline and the post-outbreak period are commented. Mark them and press Ctrl+Shift+C to uncomment them and execute the code and write the text.  -->
+<!-- Finally, we make one plot for the difference in the percent of tweets that contained a particular word. Because we only have the 60 most frequent words in each category, these plots only include words that occur both during the baseline and during the outbreak. An additional plot shows the words that were part of the 60 most frequent ones during the outbreak, but were not that frequent during the baseline. -->
+
+<!-- ## Settings -->
+
+```{r, settings, cache=T}
+#general settings for all plots: Unicode for all emojis/symbols (these can only be printed to html)
+emoji_joy_tears =  intToUtf8(0x1f602)
+emoji_heart_eyes =  intToUtf8(0x1f600 + 13)
+emoji_crying =  intToUtf8(0x1f600 + 45)
+emoji_angry =  intToUtf8(0x1f600 + 32)
+emoji_rolling = intToUtf8(0x0001f923)
+emoji_smiling_eyes = intToUtf8(0x1f600 + 10)
+thumbs_up = intToUtf8(0x1F44D)
+hugging_face = intToUtf8(0x1F917)#hugging face
+emoji_heart_eyes = intToUtf8(0x1f600 + 13)#smiling face with heart-shaped eyes
+emoji_winking = intToUtf8(0x1f600 + 9)#winking face
+emoji__kiss=intToUtf8(0x1f600 + 24) #face throwing a kiss
+emoji_thinking = intToUtf8(0x1F914)#thinking face
+emoji_grinning = intToUtf8(0x1F601)# grinning face with smiling eyes
+emoji_sweat = intToUtf8(0x1F605)#smiling face with open mouth and cold sweat
+clover = intToUtf8(0x1F340)#four leaf clover
+emoji_rolling_eyes = intToUtf8(0x1F644)#face with rolling eyes
+hot_beverage = intToUtf8(0x2615)
+emoji_sunglass = intToUtf8(0x1F60E)
+see_no_monkey = intToUtf8(0x1F648)
+pointing_index=intToUtf8(0x1F449)
+blue_circle=intToUtf8(0x1F535)
+clapping = intToUtf8(0x1F44F)
+biceps = intToUtf8(0x1F4AA)
+black_heart = intToUtf8(0x1F5A4)
+delicious = intToUtf8(0x1F60B)
+pleading = intToUtf8(0x1F97A)
+
+#function to recode text in terms into emoji:
+makeemoji = function(term){
+   recode(term, "face with tears of joy" = emoji_joy_tears, "rolling on the floor laughing" = emoji_rolling,
+                       "loudly crying face" = emoji_crying, "smiling face with smiling eyes" = emoji_smiling_eyes, "thumbs up sign" = thumbs_up,
+                       "hugging face" = hugging_face, "smiling face with heart-shaped eyes"=emoji_heart_eyes, "winking face"=emoji_winking,
+                       "face throwing a kiss"=emoji__kiss, "thinking face" = emoji_thinking, "grinning face with smiling eyes"=emoji_grinning,
+                       "smiling face with open mouth and cold sweat"=emoji_sweat,"four leaf clover"=clover,
+                       "face with rolling eyes"=emoji_rolling_eyes, "hot beverage" = hot_beverage, "smiling face with sunglasses"=emoji_sunglass, "see-no-evil monkey" = see_no_monkey, "white right pointing backhand index" = pointing_index, "large blue circle" =blue_circle, "clapping hands sign"=clapping, "flexed biceps"=biceps, "heavy black heart"=black_heart, "face savouring delicious food"=delicious, "pleading face"=pleading)
+}
+
+#show words that overlap between baseline and outbreak period: True or false
+#if only terms that are not in total tweets should be shown (for baseline and 5 week plots), set to false (no overlapping terms)
+overlap = TRUE # change this in the entire script using replacement, so the cache=T statement catches that the code has changed, otherwise it just uses saved figures from the cache folder
+
+```
+
+
+
+\newpage
+
+## Results 
+
+### English: United Kingdom
+
+```{r, prep data UK, cache=T}
+overlap = TRUE
+country <- "uk"
+totalbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+angerbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+sadbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+anxbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+posbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+# 5 week after outbreak
+totaldf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_20200301-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  # exchange emojji picture for description
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# difference to baseline
+totaldiffdf = totalbasedf %>%  select(-Type) %>%
+  right_join(totaldf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+
+angerdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_20200301-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+    mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# add columns for terms that exist in total and anger (36) and calculate difference
+# angerdiffdf = angerdf %>%  select(-Type) %>%
+#   inner_join(angerdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+angerdiffdf = angerbasedf %>%  select(-Type) %>%
+  right_join(angerdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+#keep only terms that are not in totaldf
+if(overlap==FALSE){angerdf = angerdf %>%
+  filter(!term %in% totaldf$term)}
+
+saddf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_20200301-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# saddiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(saddf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+saddiffdf = sadbasedf %>%  select(-Type) %>%
+  right_join(saddf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){saddf = saddf %>%
+  filter(!term %in% totaldf$term)}
+
+anxdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_20200301-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# anxdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(anxdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+anxdiffdf = anxbasedf %>%  select(-Type) %>%
+  right_join(anxdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){anxdf = anxdf %>%
+  filter(!term %in% totaldf$term)}
+
+posdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_20200301-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# posdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(posdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+posdiffdf = posbasedf %>%  select(-Type) %>%
+  right_join(posdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){posdf = posdf %>%
+  filter(!term %in% totaldf$term)}
+
+
+### how many terms occur in more than 1% of the tweets (during outbreak)?
+country = rep(country, nrow(anxdf)+nrow(angerdf)+nrow(saddf)+nrow(posdf))
+emotion = rep(c("anxiety", "anger", "sadness", "positive"), times = c(nrow(anxdf),nrow(angerdf),nrow(saddf),nrow(posdf)))
+alldf = cbind(rbind(anxdf, angerdf, saddf, posdf), emotion, country)
+
+```
+
+<!-- If overlap is set to FALSE: For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots baseline UK,  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.1. Most frequent terms in tweets per category during the baseline in the UK.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax=8
+ptot <- ggplot(totalbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(sadbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.08*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ptot | panx | psad | pang |  ppos
+```
+
+\newpage
+
+<!-- If overlap is set to FALSE: For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots outbreak UK,  fig.width=12, fig.height=9, cache=T, fig.cap="**Figure S2.2. Most frequent terms in tweets per category during the 5 weeks after the outbreak in the UK.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax = 13.4
+ptot <- ggplot(totaldf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.3*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.15*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(saddf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.15*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.3*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.3*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+ptot | panx | psad | pang | ppos
+```
+
+
+<!-- ### Difference: Volume of tweets with the term during baseline vs. 5 outbreak weeks -->
+
+<!-- What increases, what decreases after the outbreak? Only words that are among the 60 most frequent during baseline are shown. New terms are shown in the second row. -->
+
+<!-- ```{r, plots difference UK,  fig.width=12, fig.height=7} -->
+<!-- overlap = TRUE -->
+<!-- ymax = 5; ymin = -0.7 -->
+
+<!-- ptot <- ggplot(filter(totaldiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="grey") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ ggtitle("Outbreak vs. baseline") -->
+
+<!-- panx <- ggplot(filter(anxdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="orange") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anxiety tweets vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- psad <- ggplot(filter(saddiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="blue") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.03*nchar(as.character(term))), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("sadness vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- pang <- ggplot(filter(angerdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="red") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))/2), vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anger vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ppos <- ggplot(filter(posdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="cyan") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))/2), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("positive vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ptot | panx | psad | pang |ppos -->
+<!-- ``` -->
+
+
+<!-- ```{r  fig.width=12, fig.height=5} -->
+<!-- #plots with new terms -->
+<!-- ymax = 6 -->
+<!-- newtot <- ggplot(filter(totaldiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="grey")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.03*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("New terms during outbreak") -->
+<!-- newanx <- ggplot(filter(anxdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="orange")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.03*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- newsad <- ggplot(filter(saddiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="blue")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.01*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("sadness tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newang <- ggplot(filter(angerdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="red")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.01*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+  ylab("anger tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newpos <- ggplot(filter(posdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="cyan")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.01*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("positive tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newtot | newanx | newsad | newang |  newpos -->
+<!-- ``` -->
+
+**Observations**
+
+*LIWC words*:
+
+* Anxiety: panic (buying)
+* Sadness: self-isolation
+
+*Topics*: 
+
+* General: More tweets mentioned people, home, work and time during the outbreak vs. baseline. The word social became part of the 60 most frequent terms, and occurs often in anxiety and sadness tweets, possibly linked to social distancing. 
+* The increase in mentions of "people" was stronger for negative emotional tweets than tweets in general. Mentions of home increased most in anxiety and sadness tweets.
+* Shift in topic from political to pandemic: In 2019, tweets, and in particular emotional ones, often mentione political issues related to Brexit, the EU and the Labour party (leave, left, party, UK, vote,...). During the outbreak, these words are gone, and instead words like coronavirus, health, staff, #covid-19, virus are much more frequent. 
+* "Government" is more frequent in anxious and angry emotional than other tweets. 
+* Anxiety: The word health is one of the most frequent. Coronavirus ranks higher than in other emotion categories. People worry about panic buying, and about (hospital) staff. Positive words like love, smiley, good, life, great were less frequent in anxiety tweets than during baseline. 
+* Sadness: Sadness tweets evolve around staying at home, the famliy, the government, support, social, suggesting staying at home as a factor for sadness. 
+* Anger tweets mentioned the government more than during baseline. 
+* Positive emotions: The word lockdown ranks higher than in other tweets. People seem to have noticed positive aspects of staying at home. Other new highly frequent words during the outbreak: online, books, family, team. 
+
+
+### German: Germany
+
+```{r, prep data Germany}
+overlap = TRUE
+country <- "germany"
+totalbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term!="unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+angerbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%
+ mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+sadbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%
+mutate(term = makeemoji(term))%>%
+  arrange(desc(freq)) %>%
+  #remove misparsed Co, part of abbreviated twitter links like https://t.co/i9Ck6mMTw1
+  filter(term!="Co")
+
+anxbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%
+mutate(term = makeemoji(term))%>%arrange(desc(freq))
+
+posbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_2019.csv"), header=T, skip=6) %>% 
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term!="unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+country="germany"
+totaldf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  # exchange emojji picture for description
+    mutate(term = makeemoji(term))%>%  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# difference to baseline
+totaldiffdf = totalbasedf %>%  select(-Type) %>%
+  right_join(totaldf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, 
+         term = tolower(term))
+
+angerdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+    mutate(term = makeemoji(term))%>%  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# add columns for terms that exist in total and anger (36) and calculate difference
+# angerdiffdf = angerdf %>%  select(-Type) %>%
+#   inner_join(angerdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+angerdiffdf = angerbasedf %>%  select(-Type) %>%
+  right_join(angerdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base,  term = tolower(term))
+if(overlap==FALSE){angerdf = angerdf %>%
+  filter(!term %in% totaldf$term)}
+
+saddf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term))%>%  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# saddiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(saddf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+saddiffdf = sadbasedf %>%  select(-Type) %>%
+  right_join(saddf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){saddf = saddf %>%
+  filter(!term %in% totaldf$term)}
+
+anxdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# anxdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(anxdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+anxdiffdf = anxbasedf %>%  select(-Type) %>%
+  right_join(anxdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){anxdf = anxdf %>%
+  filter(!term %in% totaldf$term)}
+
+posdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term))%>%  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# posdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(posdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+posdiffdf = posbasedf %>%  select(-Type) %>%
+  right_join(posdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){posdf = posdf %>%
+  filter(!term %in% totaldf$term)}
+
+### how many terms occur in more than 1% of the tweets (during outbreak)? 
+country = rep(country, nrow(anxdf)+nrow(angerdf)+nrow(saddf)+nrow(posdf))
+emotion = rep(c("anxiety", "anger", "sadness", "positive"), times = c(nrow(anxdf),nrow(angerdf),nrow(saddf),nrow(posdf))) 
+countrydf = cbind(rbind(anxdf, angerdf, saddf, posdf), emotion, country)
+alldf = rbind(alldf, countrydf)
+```
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.3. Most frequent terms in tweets per category during the baseline in Germany.** Percentage of tweets with the term."}
+overlap=TRUE
+ymax=4
+ptot <- ggplot(totalbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.01*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.0014*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(sadbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.005*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.0014*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.01*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ptot | panx | psad | pang |  ppos
+```
+
+\newpage
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.4. Most frequent terms in tweets per category during the 5 weeks after the outbreak in Germany.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax = 9.1
+ptot <- ggplot(totaldf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(saddf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+ptot | panx | psad | pang | ppos
+```
+
+<!-- ### Difference: Volume of tweets with the term during baseline vs. 5 outbreak weeks -->
+
+<!-- What increases, what decreases after the outbreak? Only words that are among the 60 most frequent during baseline are shown. New terms are shown in the second row. -->
+
+<!-- ```{r  fig.width=12, fig.height=9, cache=T} -->
+<!-- ymax = 1; ymin = -0.7 -->
+<!-- ptot <- ggplot(filter(totaldiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="grey") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ ggtitle("Outbreak vs. baseline") -->
+<!-- panx <- ggplot(filter(anxdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="orange") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.03*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anxiety vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- psad <- ggplot(filter(saddiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="blue") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.01*nchar(as.character(term))), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("sadness vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- pang <- ggplot(filter(angerdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="red") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.03*nchar(as.character(term))/2), vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anger vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ppos <- ggplot(filter(posdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="cyan") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.03*nchar(as.character(term))/2), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("positive vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ptot |panx | psad | pang |ppos -->
+<!-- ``` -->
+
+<!-- ```{r  fig.width=12, fig.height=5} -->
+<!-- #plots with new terms -->
+<!-- ymax = 9 -->
+<!-- newtot <- ggplot(filter(totaldiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="grey")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("New terms during outbreak") -->
+<!-- newanx <- ggplot(filter(anxdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="orange")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.07*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- newsad <- ggplot(filter(saddiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="blue")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.1*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("sadness tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newang <- ggplot(filter(angerdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="red")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.15*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+  ylab("anger tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newpos <- ggplot(filter(posdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="cyan")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.2*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("positive tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newtot | newanx | newsad | newang |  newpos -->
+<!-- ``` -->
+
+
+**Observations**
+
+*LIWC words*:
+
+* All terms similarly occured during the baseline and outbreak period. 
+* Anxiety: Fürchte
+* Sadness: Tut mir leid, enttäuscht
+* Anger: 
+    - Baseline: Störung, Täter, kämpfen, lächerlich, zerstört, stört
+    - Outbreak: Störung, böse, kämpfen, Täter, lächerlich
+* Positive: 
+  - Baseline: schönen (Tag), gerne, smiley, dankeschön, glück, glückwunsch 
+  - Outbreak: smiley, gerne, schönen, Glück, dankeschön
+
+*Topics*:
+
+* Baseline: Politics - AfD, particularly in anxiety and anger tweets. Also SPD, CDU, Politik, Frauen, Geld, Deutschland, Berlin, EU. (less politics in positive tweets)
+* Outbreak: Coronavirus, Krise, Leute, Kinder, Frauen, bleiben
+* Shift: More Leute, Leben, Corona, Krise, Kinder, 
+* Anxiety: Qualität, Bitte, bleibt became more (Bitte bleibt zu Hause?)
+* Anger: "deutschen" became less, more kämpfen
+* Sadness: bleiben, zu Hause, leben, Krise, Kinder
+* Positive:  bleiben, bleibt, gesund
+
+### Spanish: Spain
+
+```{r, prep data Spain, cache=T}
+overlap = TRUE
+country <- "spain"
+totalbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+angerbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+sadbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+anxbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+posbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+# 5 week after outbreak
+totaldf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_20200228-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  # exchange emojji picture for description
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# difference to baseline
+totaldiffdf = totalbasedf %>%  select(-Type) %>%
+  right_join(totaldf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+
+angerdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_20200228-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+    mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# add columns for terms that exist in total and anger (36) and calculate difference
+# angerdiffdf = angerdf %>%  select(-Type) %>%
+#   inner_join(angerdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+angerdiffdf = angerbasedf %>%  select(-Type) %>%
+  right_join(angerdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+#keep only terms that are not in totaldf
+if(overlap==FALSE){angerdf = angerdf %>%
+  filter(!term %in% totaldf$term)}
+
+saddf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_20200228-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# saddiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(saddf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+saddiffdf = sadbasedf %>%  select(-Type) %>%
+  right_join(saddf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){saddf = saddf %>%
+  filter(!term %in% totaldf$term)}
+
+anxdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_20200228-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# anxdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(anxdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+anxdiffdf = anxbasedf %>%  select(-Type) %>%
+  right_join(anxdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){anxdf = anxdf %>%
+  filter(!term %in% totaldf$term)}
+
+posdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_20200228-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# posdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(posdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+posdiffdf = posbasedf %>%  select(-Type) %>%
+  right_join(posdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){posdf = posdf %>%
+  filter(!term %in% totaldf$term)}
+
+### how many terms occur in more than 1% of the tweets (during outbreak)?
+country = rep(country, nrow(anxdf)+nrow(angerdf)+nrow(saddf)+nrow(posdf))
+emotion = rep(c("anxiety", "anger", "sadness", "positive"), times = c(nrow(anxdf),nrow(angerdf),nrow(saddf),nrow(posdf))) 
+countrydf = cbind(rbind(anxdf, angerdf, saddf, posdf), emotion, country)
+alldf = rbind(alldf, countrydf)
+```
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots baseline spain,  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.5. Most frequent terms in tweets per category during the baseline in Spain.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax=10.5
+ptot <- ggplot(totalbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(sadbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.15*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ptot | panx | psad | pang |  ppos
+```
+
+\newpage
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots outbreak spain,  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.6. Most frequent terms in tweets per category during the 5 weeks after the outbreak in Spain.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax = 10
+ptot <- ggplot(totaldf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(saddf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+ptot | panx | psad | pang | ppos
+```
+
+<!-- ### Difference: Volume of tweets with the term during baseline vs. 5 outbreak weeks -->
+
+<!-- What increases, what decreases after the outbreak? Only words that are among the 60 most frequent during baseline are shown. New terms are shown in the second row. -->
+
+<!-- ```{r, plots difference spain,  fig.width=12, fig.height=7} -->
+<!-- ymax = 8; ymin = -2 -->
+
+<!-- ptot <- ggplot(filter(totaldiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="grey") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.2*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ ggtitle("Outbreak vs. baseline") -->
+
+<!-- panx <- ggplot(filter(anxdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="orange") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.2*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- psad <- ggplot(filter(saddiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="blue") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.2*nchar(as.character(term))), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("sadness vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- pang <- ggplot(filter(angerdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="red") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anger vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ppos <- ggplot(filter(posdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="cyan") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.2*nchar(as.character(term))/2), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("positive vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ptot | panx | psad | pang |ppos -->
+<!-- ``` -->
+
+
+<!-- ```{r  fig.width=12, fig.height=5} -->
+<!-- #plots with new terms -->
+<!-- ymax = 6 -->
+<!-- newtot <- ggplot(filter(totaldiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="grey")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("New terms during outbreak") -->
+<!-- newanx <- ggplot(filter(anxdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="orange")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.03*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- newsad <- ggplot(filter(saddiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="blue")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.01*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("sadness tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newang <- ggplot(filter(angerdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="red")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.01*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+  ylab("anger tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newpos <- ggplot(filter(posdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="cyan")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.01*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("positive tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newtot | newanx | newsad | newang |  newpos -->
+<!-- ``` -->
+
+
+**Observations**
+
+* In Spanish, the word "shame" (verguenza) seems to be an important term in the anxiety dictionary, both during baseline and post-covid outbreak.
+* The word government was used more often after the outbreak, in particular in anxiety and anger tweets.
+* The words house and state was generally used more often after the outbreak.
+
+*LIWC words*:
+
+* Anxiety: 
+    - baseline: falta (missing), estrés (stress), depresión
+    - outbreak: falta, estrés, miedo (fear), panico
+* Sadness: daño (hurt)
+* Anger: ridículo (only baseline), coño, puta, mierda, mal
+* Positive: 
+  - Baseline: smiley, espero (hope), facil (easy), super
+  - Outbreak ánimo (encourage, encouragement)
+
+*Topics*: 
+
+* Baseline: Politics (partido, PSOE, gobierno)
+* Outbreak: Gobierno ranks very highly (especially in anxiety and anger tweets), crisis, cuarentena, casa (house) and gente/personas (people/persons) increased, queda (stay) 
+    - Anxiety: medidas (measures), cuarentena, información, estado (de alarma; emergency state) increased particularly, presión (pressure), sanidad/salud (health)
+    - Sad: cuarentena, salir (go out), casos (cases), pandemia, espero, less partido
+    - Anger: medidas (measures),  more protección, less partido (political party), salir (go out)
+    - Positive: mequedoencasa, medidas, familia, equipo, animo (encouragement), abrazo
+
+
+### Italian: Italy
+
+```{r, prep data Italy, cache=T}
+overlap = TRUE
+country <- "italy"
+totalbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+angerbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+sadbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+anxbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+posbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+# 5 week after outbreak
+totaldf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_20200222-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  # exchange emojji picture for description
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# difference to baseline
+totaldiffdf = totalbasedf %>%  select(-Type) %>%
+  right_join(totaldf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+
+angerdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_20200222-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+    mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# add columns for terms that exist in total and anger (36) and calculate difference
+# angerdiffdf = angerdf %>%  select(-Type) %>%
+#   inner_join(angerdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+angerdiffdf = angerbasedf %>%  select(-Type) %>%
+  right_join(angerdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+#keep only terms that are not in totaldf
+if(overlap==FALSE){angerdf = angerdf %>%
+  filter(!term %in% totaldf$term)}
+
+saddf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_20200222-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# saddiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(saddf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+saddiffdf = sadbasedf %>%  select(-Type) %>%
+  right_join(saddf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){saddf = saddf %>%
+  filter(!term %in% totaldf$term)}
+
+anxdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_20200222-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# anxdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(anxdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+anxdiffdf = anxbasedf %>%  select(-Type) %>%
+  right_join(anxdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){anxdf = anxdf %>%
+  filter(!term %in% totaldf$term)}
+
+posdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_20200222-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# posdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(posdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+posdiffdf = posbasedf %>%  select(-Type) %>%
+  right_join(posdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){posdf = posdf %>%
+  filter(!term %in% totaldf$term)}
+
+### how many terms occur in more than 1% of the tweets (during outbreak)? 
+country = rep(country, nrow(anxdf)+nrow(angerdf)+nrow(saddf)+nrow(posdf))
+emotion = rep(c("anxiety", "anger", "sadness", "positive"), times = c(nrow(anxdf),nrow(angerdf),nrow(saddf),nrow(posdf))) 
+countrydf = cbind(rbind(anxdf, angerdf, saddf, posdf), emotion, country)
+alldf = rbind(alldf, countrydf)
+```
+
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots baseline Italy,  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.7. Most frequent terms in tweets per category during the baseline in Italy.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax=3.5
+ptot <- ggplot(totalbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(sadbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.015*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ptot | panx | psad | pang |  ppos
+```
+
+
+\newpage
+
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots outbreak Italy,  fig.width=12, fig.height=9, cache = T, fig.cap ="**Figure S2.8. Most frequent terms in tweets per category during the 5 weeks after the outbreak in Italy.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax = 15
+ptot <- ggplot(totaldf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.3*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.3*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(saddf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.3*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+ptot | panx | psad | pang | ppos
+```
+
+<!-- ### Difference: Volume of tweets with the term during baseline vs. 5 outbreak weeks -->
+
+<!-- What increases, what decreases after the outbreak? Only words that are among the 60 most frequent during baseline are shown. New terms are shown in the second row. -->
+
+<!-- ```{r, plots difference Italy,  fig.width=12, fig.height=7} -->
+<!-- ymax = 3; ymin = -0.7 -->
+
+<!-- ptot <- ggplot(filter(totaldiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="grey") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ ggtitle("Outbreak vs. baseline") -->
+
+<!-- panx <- ggplot(filter(anxdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="orange") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- psad <- ggplot(filter(saddiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="blue") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("sadness vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- pang <- ggplot(filter(angerdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="red") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anger vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ppos <- ggplot(filter(posdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="cyan") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("positive vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ptot | panx | psad | pang |ppos -->
+<!-- ``` -->
+
+
+<!-- ```{r  fig.width=12, fig.height=5} -->
+<!-- #plots with new terms -->
+<!-- ymax = 14.5 -->
+<!-- newtot <- ggplot(filter(totaldiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="grey")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("New terms during outbreak") -->
+<!-- newanx <- ggplot(filter(anxdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="orange")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- newsad <- ggplot(filter(saddiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="blue")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("sadness tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newang <- ggplot(filter(angerdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="red")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+  ylab("anger tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newpos <- ggplot(filter(posdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="cyan")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("positive tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newtot | newanx | newsad | newang |  newpos -->
+<!-- ``` -->
+
+
+**Observations**
+
+*LIWC words*: 
+
+* Positive: smiley, Buona, buon, Buongiorno (good/morning), bella/o
+
+*Topics*: 
+
+* Baseline: Politics - (Matteo) Salvini, Roma, PD (Partito Democratico)
+* Outbreak:  Different forms of "to be"  (stanno, sto, storia), gente (people) in all emotional tweets, quarantena
+    - Anxiety: contagion, stay (stare), emergency (emergenza), casi (cases), salute (health)
+    - Sadness: Lombardia, quarantine, cazzo (fuck), stare (stay), casi (cases), uscire (going out)
+    - Anger: cazzo (fuck)
+    - Positive: stare (stay), abbraccio (hug), spero (hope)
+* The name of Giuseppe Conte was more frequent in negative emotional tweets during the outbreak.
+* The word stay (stare/stiamo) was more frequent in anxiety, sad and positive tweets during the outbreak.
+
+
+
+\newpage
+
+### Dutch: Netherlands
+
+```{r, prep data netherlands, cache=T}
+overlap = TRUE
+country <- "netherlands"
+totalbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+angerbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+sadbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+anxbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+posbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+# 5 week after outbreak
+totaldf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_20200304-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  # exchange emojji picture for description
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# difference to baseline
+totaldiffdf = totalbasedf %>%  select(-Type) %>%
+  right_join(totaldf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+
+angerdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_20200304-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+    mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# add columns for terms that exist in total and anger (36) and calculate difference
+# angerdiffdf = angerdf %>%  select(-Type) %>%
+#   inner_join(angerdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+angerdiffdf = angerbasedf %>%  select(-Type) %>%
+  right_join(angerdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+#keep only terms that are not in totaldf
+if(overlap==FALSE){angerdf = angerdf %>%
+  filter(!term %in% totaldf$term)}
+
+saddf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_20200304-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# saddiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(saddf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+saddiffdf = sadbasedf %>%  select(-Type) %>%
+  right_join(saddf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){saddf = saddf %>%
+  filter(!term %in% totaldf$term)}
+
+anxdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_20200304-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# anxdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(anxdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+anxdiffdf = anxbasedf %>%  select(-Type) %>%
+  right_join(anxdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){anxdf = anxdf %>%
+  filter(!term %in% totaldf$term)}
+
+posdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_20200304-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# posdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(posdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+posdiffdf = posbasedf %>%  select(-Type) %>%
+  right_join(posdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){posdf = posdf %>%
+  filter(!term %in% totaldf$term)}
+
+### how many terms occur in more than 1% of the tweets (during outbreak)?
+country = rep(country, nrow(anxdf)+nrow(angerdf)+nrow(saddf)+nrow(posdf)) 
+emotion = rep(c("anxiety", "anger", "sadness", "positive"), times = c(nrow(anxdf),nrow(angerdf),nrow(saddf),nrow(posdf)))
+countrydf = cbind(rbind(anxdf, angerdf, saddf, posdf), emotion, country)
+alldf = rbind(alldf, countrydf)
+```
+
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots baseline netherlands,  fig.width=12, fig.height=9, cache = T, fig.cap ="**Figure S2.9. Most frequent terms in tweets per category during the baseline in the Netherlands.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax=8
+ptot <- ggplot(totalbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.01*nchar(as.character(term))/2-0.25), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(sadbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.015*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ptot | panx | psad | pang |  ppos
+```
+
+\newpage
+
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots outbreak netherlands,  fig.width=12, fig.height=9, cache=T, fig.cap ="**Figure S2.10. Most frequent terms in tweets per category during the 5 weeks after the outbreak in the Netherlands.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax = 12
+ptot <- ggplot(totaldf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.2*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(saddf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.08*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.15*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.15*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+ptot | panx | psad | pang | ppos
+```
+
+<!-- ### Difference: Volume of tweets with the term during baseline vs. 5 outbreak weeks -->
+
+<!-- What increases, what decreases after the outbreak? Only words that are among the 60 most frequent during baseline are shown. New terms are shown in the second row. -->
+
+<!-- ```{r, plots difference netherlands,  fig.width=12, fig.height=7} -->
+<!-- ymax = 5; ymin = -2 -->
+
+<!-- ptot <- ggplot(filter(totaldiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="grey") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ ggtitle("Outbreak vs. baseline") -->
+
+<!-- panx <- ggplot(filter(anxdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="orange") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- psad <- ggplot(filter(saddiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="blue") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("sadness vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- pang <- ggplot(filter(angerdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="red") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anger vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ppos <- ggplot(filter(posdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="cyan") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("positive vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ptot | panx | psad | pang |ppos -->
+<!-- ``` -->
+
+
+<!-- ```{r  fig.width=12, fig.height=5} -->
+<!-- #plots with new terms -->
+<!-- ymax = 14.5 -->
+<!-- newtot <- ggplot(filter(totaldiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="grey")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("New terms during outbreak") -->
+<!-- newanx <- ggplot(filter(anxdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="orange")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- newsad <- ggplot(filter(saddiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="blue")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("sadness tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newang <- ggplot(filter(angerdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="red")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+  ylab("anger tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newpos <- ggplot(filter(posdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="cyan")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("positive tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newtot | newanx | newsad | newang |  newpos -->
+<!-- ``` -->
+
+
+**Observations**
+
+* In Dutch, the words "people" (especially), "all",  "time" (tijd) and "just" became more frequent during the outbreak
+* The word "new year" became less frequent during the outbreak, simply because new years eve is not part of that time period, and Dutch Twitter apparently has a lot of new years wishes. The words new "nieuwe" and happy "gelukkig" are frequent as well. 
+
+*Topics*: 
+
+* Outbreak : coronavirus, thuis (at home), blijven (stay), nodig (necessary), elkaar (each other), sterkte (strength)
+    - Anxiety: crisis, nodig (necessary), elkaar (each other)
+    - Sad: Kinderen (kids)
+    
+*LIWC words*: 
+
+* Anxiety: zorgen, zorg (worries)
+* Positiv: gelukkik (happy), lekker (pretty, delicious), mooi (beautiful)
+
+
+\newpage
+
+### French: France
+
+```{r, prep data france, cache=T}
+overlap = TRUE
+country <- "france"
+totalbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+angerbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+sadbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq))
+
+anxbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>%filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+posbasedf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_2019.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term))%>%
+  arrange(desc(freq))
+
+# 5 week after outbreak
+totaldf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_total_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  # exchange emojji picture for description
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# difference to baseline
+totaldiffdf = totalbasedf %>%  select(-Type) %>%
+  right_join(totaldf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+
+angerdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anger_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+    mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# add columns for terms that exist in total and anger (36) and calculate difference
+# angerdiffdf = angerdf %>%  select(-Type) %>%
+#   inner_join(angerdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+angerdiffdf = angerbasedf %>%  select(-Type) %>%
+  right_join(angerdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+#keep only terms that are not in totaldf
+if(overlap==FALSE){angerdf = angerdf %>%
+  filter(!term %in% totaldf$term)}
+
+saddf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_sad_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+  mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# saddiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(saddf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+saddiffdf = sadbasedf %>%  select(-Type) %>%
+  right_join(saddf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){saddf = saddf %>%
+  filter(!term %in% totaldf$term)}
+
+anxdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_anxiety_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# anxdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(anxdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+anxdiffdf = anxbasedf %>%  select(-Type) %>%
+  right_join(anxdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){anxdf = anxdf %>%
+  filter(!term %in% totaldf$term)}
+
+posdf <- read.csv(file=paste0("./data_wordcloudPeriods/wordcloud_",country,"_positive_20200227-5weeks.csv"), header=T, skip=6) %>%
+  rename(term=as.character("Topic.Name"), freq = "Percentage.Volume" )%>% filter(term != "unrecognised_emoji") %>%
+   mutate(term = makeemoji(term)) %>%
+  arrange(desc(freq)) %>%
+  mutate(term = tolower(term))
+# posdiffdf = totaldf %>%  select(-Type) %>%
+#   inner_join(posdf, by="term", suffix=c(".total", ".emo")) %>%
+#   mutate(freq_diff = freq.emo-freq.total)
+posdiffdf = posbasedf %>%  select(-Type) %>%
+  right_join(posdf, by="term", suffix=c(".base", ".post")) %>%
+  mutate(freq_diff = freq.post-freq.base, term = tolower(term))
+if(overlap==FALSE){posdf = posdf %>%
+  filter(!term %in% totaldf$term)}
+
+### how many terms occur in more than 1% of the tweets (during outbreak)? 
+country = rep(country, nrow(anxdf)+nrow(angerdf)+nrow(saddf)+nrow(posdf))
+emotion = rep(c("anxiety", "anger", "sadness", "positive"), times = c(nrow(anxdf),nrow(angerdf),nrow(saddf),nrow(posdf))) 
+countrydf = cbind(rbind(anxdf, angerdf, saddf, posdf), emotion, country)
+alldf = rbind(alldf, countrydf)
+```
+
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots baseline france,  fig.width=12, fig.height=9, cache=TRUE, fig.cap ="**Figure S2.11. Most frequent terms in tweets per category during the baseline in France.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax=4
+ptot <- ggplot(totalbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.01*nchar(as.character(term))/2-0.25), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(sadbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.015*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posbasedf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.02*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ptot | panx | psad | pang |  ppos
+```
+
+\newpage
+
+
+
+<!-- For tweets that contain emotional terms, the plot only shows terms not included among the most frequent in total tweet volume. -->
+
+```{r, plots outbreak france,  fig.width=12, fig.height=9, cache=TRUE, fig.cap ="**Figure S2.12. Most frequent terms in tweets per category during the 5 weeks after the outbreak in France.** Percentage of tweets with the term."}
+overlap = TRUE
+ymax = 5
+ptot <- ggplot(totaldf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="gray") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5) +  ylim(0,ymax)+ylab("% total tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank()) 
+
+panx <- ggplot(anxdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="orange") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% anxiety tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+psad <- ggplot(saddf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="blue") +
+  geom_text(aes(label = term, y=freq+0.05*nchar(as.character(term))), vjust = 0.5)+ ylim(0,ymax)+ ylab("% sadness tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+pang <- ggplot(angerdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="red") +
+  geom_text(aes(label = term, y=freq+0.1*nchar(as.character(term))/2), vjust = 0.5)+ylim(0,ymax)+ ylab("% anger tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+
+ppos <- ggplot(posdf, aes(x = reorder(term, freq), y = freq)) + geom_col(fill="cyan") +
+  geom_text(aes(label = term, y=freq+0.08*nchar(as.character(term))/2), vjust = 0.5)+ ylim(0,ymax)+ ylab("% positive tweets with term")+
+  coord_flip() + theme_bw() + theme(axis.title.y=element_blank(),
+                                    axis.text.y=element_blank(),
+                                    axis.ticks.y=element_blank())
+ptot | panx | psad | pang | ppos
+```
+
+<!-- ### Difference: Volume of tweets with the term during baseline vs. 5 outbreak weeks -->
+
+<!-- What increases, what decreases after the outbreak? Only words that are among the 60 most frequent during baseline are shown. New terms are shown in the second row. -->
+
+<!-- ```{r, plots difference france,  fig.width=12, fig.height=7} -->
+<!-- ymax = 2; ymin = -0.7 -->
+
+<!-- ptot <- ggplot(filter(totaldiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="grey") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ ggtitle("Outbreak vs. baseline") -->
+
+<!-- panx <- ggplot(filter(anxdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="orange") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2),vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- psad <- ggplot(filter(saddiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="blue") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.05*nchar(as.character(term))), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("sadness vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- pang <- ggplot(filter(angerdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="red") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2), vjust = 0.5)+ ylim(ymin,ymax)+ ylab("anger vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ppos <- ggplot(filter(posdiffdf, !is.na(freq.base)), aes(x = reorder(term, freq_diff), y = freq_diff)) + geom_col(fill="cyan") + -->
+<!--   geom_text(aes(label = term, y=freq_diff+0.1*nchar(as.character(term))/2), vjust = 0.5)+  ylim(ymin,ymax)+ ylab("positive vs. total tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- ptot | panx | psad | pang |ppos -->
+<!-- ``` -->
+
+
+<!-- ```{r  fig.width=12, fig.height=5} -->
+<!-- #plots with new terms -->
+<!-- ymax = 10 -->
+<!-- newtot <- ggplot(filter(totaldiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="grey")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("New terms during outbreak") -->
+<!-- newanx <- ggplot(filter(anxdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="orange")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+ ylab("anxiety tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank()) -->
+<!-- newsad <- ggplot(filter(saddiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="blue")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("sadness tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newang <- ggplot(filter(angerdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="red")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+ ylim(0,ymax)+  ylab("anger tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newpos <- ggplot(filter(posdiffdf, is.na(freq.base)), aes(x = reorder(term, freq.post), y=freq.post))+geom_col(fill="cyan")+ -->
+<!--   geom_text(aes(label = term, y=freq.post+0.3*nchar(as.character(term))/2),vjust = 0.5)+  ylim(0,ymax)+ ylab("positive tweets")+ -->
+<!--   coord_flip() + theme_bw() + theme(axis.title.y=element_blank(), -->
+<!--                                     axis.text.y=element_blank(), -->
+<!--                                     axis.ticks.y=element_blank())+ggtitle("") -->
+<!-- newtot | newanx | newsad | newang |  newpos -->
+<!-- ``` -->
+
+
+**Observations**
+
+*LIWC words*: 
+
+* Anxiety: In French, "worried", "nervous/irritated", "hesitate", "lacher (give me a break, or letting go?)", "dérange" (disturb) are important words in the anxiety dictionary.
+    - Outbreak: worried is more frequent
+* Sadness: "Disappointed", "failure", "less" are important words in the sadness dictionary.
+    - Outbreak: more crying emojis, crisis, situation
+* Anger: "Hate" and "gros/grosse" (fat, serious, large), the swearword "gueule" are important in the angry dictionary.
+    - hate, death, mec, gros are slighly less during outbreak
+    - putain/ptn, gueule slighly more frequent during outbreak
+* Positive: nothing obvious, only general words
+
+*Topics*: 
+    
+* Outbreak: "cas" (i.e. covid-19 cases), "days", "confinement", "coronavirus/virus", pleading face emoji, less "never", "life", laughing emoji
+    - Anxiety: health (santé), crisis, macron, the situation, the government, the cause of the situations
+    - Sadness: pleading face emoji, mort (death)
+    - Anger: sortir (going outside)
+    - Positive: pleading face emoji, less twinking emoji
+
+Words that might indicate a problem: 
+
+* McDo and Mcdonald in anxiety and positive tweets during the baseline, but without other terms that are part of French McDonald slogans("C'est tout ce que j'aime", "Venez comme vous êtes", ), and only in less than 1% of tweets. 
+
+
+<!-- # Across all 6 countries -->
+
+<!-- During the outbreak period:  -->
+
+<!-- * Proportion of tweets that occur more often than in 3% of tweets: `r alldf %>% group_by(freq>3) %>%  summarise(pr = n()/nrow(alldf)) %>% slice(2) %>% select(pr)`. -->
+<!-- * On average, words occur in `r median(alldf$freq)`% of tweets (median). -->
+<!-- * The most frequent word is `r alldf[which(alldf$freq > 11.9), "term"]` and it occurs in `r max(alldf$freq)`% of tweets -->
+
+___
+
+## Discussion
+
+Most words occur only in a small percentage of tweets. On average, terms occur in `r round(median(alldf$freq),2)`% of tweets, with only  `r round(alldf %>% group_by(freq>3) %>%  summarise(pr = n()/nrow(alldf)) %>% slice(2) %>% select(pr),2)`% of terms occuring in more than 3% of tweets. The vast majority of these terms is not part of the LIWC dictionaries we used to assess emotion expression, but comprises generally frequent words like people, coronavirus, time, simply, normally, government etc. One exception is the Spanish word for shame (vergüenza, frequency in anxiety tweets: `r round(alldf[which(alldf$term =="vergüenza"), "freq"][1],2)`%), which is often used in phrases like "what a shame" or "it's a shame that...". Given that this term is similarly often used during baseline and outbreak, it cannot explain the increases in anxiety we observe. Overall, these results suggests that no one word strongly misfired in response to a single event and thus had a strong effect on the change in each emotion measure. Instead, the count of emotional tweets per category reflects the sum of a broadly distributed higher occurence of emotion terms in general.
+
+Examples of LIWC terms that make it into the top 60 in some of the countries are panic, fear, anxiety, worry, stress, depression in anxiety tweets; isolation, disapointed, failure and (I am) sorry in sadness tweets; different swearwords in anger tweets; and great, smileys, pretty, happy, beautiful, encourage, luck, thank you, wish in positive tweets (apart from love and good which occur often all tweets and were excluded from our wordlists).
+
+Regarding the topics of conversations in which emotional expressions occured, word frequencies reveal several trends that are visible across countries and emotions: First, the non-emotional words reveal a shift of topic discussed in emotional tweets from 2019 to the oubreak of COVID-19 from politics (typical terms: party, politician and country names, Brexit, government) to topics associated with the pandemic (coronavirus, virus, covid, measures, crisis etc) and the related everyday life changes. During the outbreak, all kinds of tweets more often mentioned people (and similar terms like children, family, staff, women), home, work, life, hope, and time (and similar terms like day, today, week). Second, words related to social distancing (quarantine, isolation, confinement, social, lockdown, stay at home, going out) often rank higher not only in sadness tweets, but also other emotional tweets, compared to tweets in general. That they also appear in positive terms, along with terms like home, books, team, family, hug etc. suggests that people noticed positive aspects of spending more time at home. 
+
+Other topics that are more strongly linked to a particluar emotion are health, staying (at home), buying (of groceries), emergency, contagion and information for anxiety, as well as going out for sadness and anger, at home for sadness but also anxiety. The word (COVID-19) cases appears frequently in anxiety and sadness tweets in Spain, Italy, and France - which are all countries that the pandemic hit hard during the first outbreak period. Deaths are only mentioned in sadness tweets in France (otherwise also in French anger and Italian anxiety tweets). Altogether, topics in sadness tweets hint that changes to people's everyday life, rather than deaths, were a driving factor of increases in sadness terms. 
+
+
+___
+
+
+<!-- Case of Spain (for country comparisons): In the only country with a slight increase in anger, i.e. Spain, the terms government, state and measures rank high in anxiety and/or anger tweets, and anger tweets more often mention protection and going out. That these issues were often raised in a negative emotional context likely reflects that early pandemic-related decisions were made in a politically polarized context.  -->
+
+```{r, results=FALSE}
+# see the frequent terms
+alldf %>% 
+  #only terms that appear in more than 3 percent of tweets:
+  filter(freq > 3) %>%
+  group_by(term, emotion) %>%
+  #average across countries
+  summarise(min=min(freq),
+            max=max(freq),
+            mean=mean(freq)) %>%
+  arrange(desc(mean))
+
+```
+```{r, results=FALSE}
+#insert a string to check in which countries/emotions it occurs how often
+alldf %>% 
+  select(term, freq, emotion, country) %>%
+  filter(str_detect(term, "ánimo")) #insert string here
+
+#copy into deepl for each country to check for emotional words
+alldf %>% filter(country=="spain") %>% select(term)
+```

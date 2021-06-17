@@ -1,0 +1,29 @@
+"Emotion";"Period";"Mean %";"SD"
+"Anger";"Baseline";9,8;2,97
+"Anger";"Control";9,81;2,96
+"Anger";"Week 1";9,52;2,66
+"Anger";"Week 2";9,39;3,01
+"Anger";"Week 3";9,18;2,99
+"Anger";"Week 4";9,29;3,03
+"Anger";"Week 5";9,19;2,9
+"Anxiety";"Baseline";3,57;1,04
+"Anxiety";"Control";3,64;1,02
+"Anxiety";"Week 1";4,29;1,12
+"Anxiety";"Week 2";4,3;1,04
+"Anxiety";"Week 3";4,36;1,16
+"Anxiety";"Week 4";4,01;1,02
+"Anxiety";"Week 5";3,81;0,93
+"Positive";"Baseline";44,77;16,14
+"Positive";"Control";44,85;16,33
+"Positive";"Week 1";44,07;16,52
+"Positive";"Week 2";44,28;16,18
+"Positive";"Week 3";44,58;15,82
+"Positive";"Week 4";44,7;15,61
+"Positive";"Week 5";44,68;15,73
+"Sadness";"Baseline";5,98;0,74
+"Sadness";"Control";6,08;0,78
+"Sadness";"Week 1";6,18;0,86
+"Sadness";"Week 2";6,47;0,89
+"Sadness";"Week 3";6,7;1,07
+"Sadness";"Week 4";6,69;0,9
+"Sadness";"Week 5";6,6;0,85
