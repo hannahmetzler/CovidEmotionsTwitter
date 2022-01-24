@@ -276,7 +276,6 @@ firstcase <- df %>%
   slice(1) %>% 
   select(date)
 
-
 #dates for lockdown and testing periods
 lockdown <- as.Date(measures$social_distancing[measures$country==unique(df$country)])
 date1 <- as.Date(df$date[df$confirmed>=30][1])
@@ -289,7 +288,7 @@ plotlines <- plotTS(df, mode="percent", title="Italy", limits=NULL)+
   geom_vline(xintercept = as.numeric(firstcase), colour = "grey", linetype=2) #add first case date to label the high peak (all other peaks in Figure 1 have labels too)
 
 addperiods(plotlines, controlstart, date1, date2, date3, date4, date5, enddate, yb, yt)
-ggsave('figures/EmotionTimelines2020_Italy.pdf', width=8, height=6, dpi=300)
+# ggsave('figures/EmotionTimelines2020_Italy.pdf', width=8, height=6, dpi=300)
 
 #plot for paper
 plotlines <- plotTS(df, mode="percent", title="Italy", limits=c(-30,100))+
