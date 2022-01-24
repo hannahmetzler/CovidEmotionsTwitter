@@ -1,10 +1,9 @@
 ---
-title: "Collective Emotions during the Covid-19 Outbreak\n\n\nSupplementary Information 2\n\n\nWord frequencies in tweets\n\n\n"
-author: "Hannah Metzler & David Garcia"
+title: "Collective Emotions during the Covid-19 Outbreak"
+subtitle: "Supplementary Information 2: Word frequencies in tweets"
+author: "Hannah Metzler, Bernard Rimé, Max Pellert, Thomas Niederkrotenthaler, Anna Di Natale & David Garcia"
 output:
     html_document: default
-    output: bookdown::html_document2
-    
     #to get a pdf of this markdown: print to html, and then print as pdf from the browser (otherwise the emoji don't work)
 always_allow_html: yes
 ---
@@ -18,6 +17,7 @@ library(tidyverse)
 library(rjson)
 library(patchwork)
 library(cowplot)
+library(kableExtra)
 ```
 
 <!-- formatting the html -->
@@ -36,7 +36,7 @@ h4.author {
 
 </style>
 
-___
+
 
 
 ## Methods
@@ -52,9 +52,11 @@ We made one plot per language, emotion and time period, including the baseline, 
 * Italian: Italy
 * Spanish: Spain
 
-We inspected which *topics* people were emotional about (i.e. non-LIWC terms that occur frequently), and which of the *LIWC terms* were most frequent, i.e. importantly adding to the number of emotional tweets. Here, disproportionally large contributions by single words would indicate problems, such as one single event strongly impacting this number, without necessarily reflecting a general change in emotions. An example from outside the analyzed time periods is the word "terror" accounting for a large propotion of anxiety and anger spikes after the attack in Hanau in German and Austrian tweets. If most words only occur in a few percent of tweets, this indicates that LIWC words that misfired during specific events or in a context that does not reflect the emotio did not strongly bias our emotion measures. 
+We inspected which *topics* people were emotional about (i.e. non-LIWC terms that occur frequently), and which of the *LIWC terms* were most frequent, i.e. importantly adding to the number of emotional tweets. Here, disproportionally large contributions by single words would indicate problems, such as one single event strongly impacting this number, without necessarily reflecting a general change in emotions. For the countries in which more than one LIWC term made it into the top 60 terms (UK, Germany, Spain and France), we therefore report the percentage of tweets containing each term in Tables S2.1 to S2.4. We further report the frequency of the least frequent terms in the top 60 per period and emotion, as upper limits for all other LIWC terms for all six countries. 
 
-<!-- In the script below, all parts calculating and plotting the frequency difference between the baseline and the post-outbreak period are commented. Mark them and press Ctrl+Shift+C to uncomment them and execute the code and write the text.  -->
+An example for one word driving an emotion peak, from outside the analyzed time periods, is the word "terror". It accounts for a large propotion of anxiety and anger spikes after the attack in Hanau in German and Austrian tweets, and this seems to mostly reflect reports about the attack rather than a broader change in emotional expressions on Twitter. In contrast, if most words only occur in a few percent of tweets, this indicates that LIWC words that might have misfired during specific events or in a context that does not reflect the emotino did not strongly bias our emotion measures. 
+
+<!-- In the script below, all text and code parts calculating and plotting the frequency difference between the baseline and the post-outbreak period are commented. Mark them and press Ctrl+Shift+C to uncomment them and execute the code and write the text.  -->
 <!-- Finally, we make one plot for the difference in the percent of tweets that contained a particular word. Because we only have the 60 most frequent words in each category, these plots only include words that occur both during the baseline and during the outbreak. An additional plot shows the words that were part of the 60 most frequent ones during the outbreak, but were not that frequent during the baseline. -->
 
 <!-- ## Settings -->
@@ -365,12 +367,86 @@ ptot | panx | psad | pang | ppos
 <!-- newtot | newanx | newsad | newang |  newpos -->
 <!-- ``` -->
 
+```{r, english liwc terms, cache = TRUE}
+#adapt wordlist dfs for a table
+make_df_for_tab =function(df, period){
+  #df as emotion name
+  emo = as.character(substitute(df))
+  df1 = df %>% 
+    select(-c(Type, Mentions)) %>% 
+    rename(Term = term, Percent = freq) %>% 
+    mutate(Period = rep(period, nrow(df)), 
+           Emotion = rep(str_replace(emo, "basedf|df", ""), nrow(df)))
+  return(df1)
+}
+angb = make_df_for_tab(angerbasedf, "baseline")
+anxb = make_df_for_tab(anxbasedf, "baseline")
+sadb = make_df_for_tab(sadbasedf, "baseline")
+posb = make_df_for_tab(posbasedf, "baseline")
+ang = make_df_for_tab(angerdf, "outbreak")
+anx = make_df_for_tab(anxdf, "outbreak")
+sad = make_df_for_tab(saddf, "outbreak")
+pos = make_df_for_tab(posdf, "outbreak")
+
+#get and preprocess LIWC dictionaries
+#directory with the dictionary files
+dirdictionaries <- '~/Documents/dictionaries/'
+#load dictionaries and delete the *, because it means zero or more matches of the previous letter. $ at end of each liwc term without * searches only for words exactly ending like the liwc term 
+dictang <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'english2007_anger.txt'))$V1, "$"), "\\*\\$", "")
+dictanx <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'english2007_anx.txt'))$V1, "$"), "\\*\\$", "")
+dictsad <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'english2007_sad.txt'))$V1, "$"), "\\*\\$", "")
+dictpos <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'english2007_posemo_noambiguous.txt'))$V1, "$"), "\\*\\$", "")
+#add beginning character to each liwc term (otherwise book is matched with ok, for example)
+dictpos <- paste0("^", dictpos)
+#add escape character to smiley brackets and colon
+dictpos <- str_replace_all(dictpos, "\\(", "\\\\\\(")
+dictpos <- str_replace_all(dictpos, "\\)", "\\\\\\)")
+dictpos <- str_replace_all(dictpos, "\\:", "\\\\\\:")
+
+# filter out LIWC terms
+angbliwc =  angb %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxbliwc =  anxb %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadbliwc =  sadb %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posbliwc =  posb %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+angliwc =  ang %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxliwc =  anx %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadliwc =  sad %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posliwc =  pos %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+
+liwc = rbind(angbliwc, anxbliwc, sadbliwc, posbliwc, angliwc, anxliwc, sadliwc, posliwc) %>% 
+  mutate(Emotion = recode(Emotion, pos = "positive", anx = "anxiety", sad = "sadness", ang = "anger")) %>% 
+  relocate(c("Period", "Emotion"), .before="Term")
+liwc_uk = liwc
+```
+
+
+**Table S2.1. Frequency of LIWC terms among the 60 most frequent terms in the UK per time period and emotion.**
+
+```{r}
+knitr::kable(liwc,
+          digits = 2,
+          format="html",
+           table.attr = "style='width:50%;'") %>% 
+  kable_classic(full_width=T, position = "left",  font_size = 13) 
+```
+
+```{r}
+lowest_percent = round(range(c(min(anxb$Percent), min(anx$Percent), min(angb$Percent), min(ang$Percent), min(sadb$Percent), min(sad$Percent), min(posb$Percent), min(pos$Percent))),2)
+```
+
 **Observations**
 
-*LIWC words*:
+*LIWC words*: 
 
-* Anxiety: panic (buying)
-* Sadness: self-isolation
+No LIWC term was present in more than `r round(max(liwc$Percent), digits = 2)`% of tweets expressing a particular emotion. During the outbreak, panic buying and self-isolating were the two most frequent anxiety and sadness terms from LIWC. Percentages for all LIWC terms not listed in Table S2.1. were below `r lowest_percent[1]` to `r lowest_percent[2]` (frequencies of the least frequent words that made it into the top 60 per dictionary and time period).
 
 *Topics*: 
 
@@ -378,10 +454,12 @@ ptot | panx | psad | pang | ppos
 * The increase in mentions of "people" was stronger for negative emotional tweets than tweets in general. Mentions of home increased most in anxiety and sadness tweets.
 * Shift in topic from political to pandemic: In 2019, tweets, and in particular emotional ones, often mentione political issues related to Brexit, the EU and the Labour party (leave, left, party, UK, vote,...). During the outbreak, these words are gone, and instead words like coronavirus, health, staff, #covid-19, virus are much more frequent. 
 * "Government" is more frequent in anxious and angry emotional than other tweets. 
-* Anxiety: The word health is one of the most frequent. Coronavirus ranks higher than in other emotion categories. People worry about panic buying, and about (hospital) staff. Positive words like love, smiley, good, life, great were less frequent in anxiety tweets than during baseline. 
+* Anxiety: The word health is one of the most frequent. Coronavirus ranks higher than in other emotion categories. People worry about panic buying, and about (hospital) staff. Positive words like good, life, great and smiley were less frequent in anxiety tweets than during baseline. 
 * Sadness: Sadness tweets evolve around staying at home, the famliy, the government, support, social, suggesting staying at home as a factor for sadness. 
 * Anger tweets mentioned the government more than during baseline. 
 * Positive emotions: The word lockdown ranks higher than in other tweets. People seem to have noticed positive aspects of staying at home. Other new highly frequent words during the outbreak: online, books, family, team. 
+
+\newpage
 
 
 ### German: Germany
@@ -632,9 +710,87 @@ ptot | panx | psad | pang | ppos
 <!-- ``` -->
 
 
+
+```{r, german liwc terms, cache = TRUE}
+#adapt wordlist dfs for a table
+angb = make_df_for_tab(angerbasedf, "baseline")
+anxb = make_df_for_tab(anxbasedf, "baseline")
+sadb = make_df_for_tab(sadbasedf, "baseline")
+posb = make_df_for_tab(posbasedf, "baseline")
+ang = make_df_for_tab(angerdf, "outbreak")
+anx = make_df_for_tab(anxdf, "outbreak")
+sad = make_df_for_tab(saddf, "outbreak")
+pos = make_df_for_tab(posdf, "outbreak")
+
+#get and preprocess LIWC dictionaries
+#directory with the dictionary files
+dirdictionaries <- '~/Documents/dictionaries/'
+#load dictionaries and delete the *, because it means zero or more matches of the previous letter. $ at end of each liwc term without * searches only for words exactly ending like the liwc term 
+dictang <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'german2007_anger.txt'))$V1, "$"), "\\*\\$", "")
+#allow qual* only to match qualen, not e.g. qualität (mismatch)
+dictang = str_replace(dictang, "qual", "qual$")
+dictang = c(dictang, "qualen")
+dictanx <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'german2007_anx.txt'))$V1, "$"), "\\*\\$", "")
+#allow qual* only to match qualen, not e.g. qualität (mismatch)
+dictanx = str_replace(dictanx, "qual", "qual$")
+dictanx = c(dictanx, "qualen")
+dictsad <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'german2007_sad_noambiguous.txt'))$V1, "$"), "\\*\\$", "")
+dictpos <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'german2007_posemo_noambiguous.txt'))$V1, "$"), "\\*\\$", "")
+#add beginning character to each liwc term (otherwise book is matched with ok, for example)
+dictpos <- paste0("^", dictpos)
+#add escape character to smiley brackets and colon
+dictpos <- str_replace_all(dictpos, "\\(", "\\\\\\(")
+dictpos <- str_replace_all(dictpos, "\\)", "\\\\\\)")
+dictpos <- str_replace_all(dictpos, "\\:", "\\\\\\:")
+
+# filter out LIWC terms
+angbliwc =  angb %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxbliwc =  anxb %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadbliwc =  sadb %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posbliwc =  posb %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+angliwc =  ang %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxliwc =  anx %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadliwc =  sad %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posliwc =  pos %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+
+liwc = rbind(angbliwc, anxbliwc, sadbliwc, posbliwc, angliwc, anxliwc, sadliwc, posliwc) %>% 
+  mutate(Emotion = recode(Emotion, pos = "positive", anx = "anxiety", sad = "sadness", ang = "anger")) %>% 
+  relocate(c("Period", "Emotion"), .before="Term")
+
+liwc_ger = liwc
+```
+
+```{r}
+lowest_percent = round(range(c(min(anxb$Percent), min(anx$Percent), min(angb$Percent), min(ang$Percent), min(sadb$Percent), min(sad$Percent), min(posb$Percent), min(pos$Percent))),2)
+```
+
+
+
+**Table S2.2. Frequency of LIWC terms among the 60 most frequent terms in Germany per time period and emotion.**
+
+```{r, out.width=0.5}
+knitr::kable(liwc,
+          digits = 2,
+       
+          format="html",
+           table.attr = "style='width:50%;'") %>% 
+  kable_classic(full_width=T, position = "left",  font_size = 13) 
+```
+
+
 **Observations**
 
-*LIWC words*:
+*LIWC words*: 
+
+No LIWC term was present in more than `r round(max(liwc$Percent), digits = 2)`% of tweets expressing a particular emotion. Percentages for all LIWC terms not listed in Table S2.2. were below `r lowest_percent[1]` to `r lowest_percent[2]` (frequencies of the least frequent words that made it into the top 60 per dictionary and time period).
 
 * All terms similarly occured during the baseline and outbreak period. 
 * Anxiety: Fürchte
@@ -655,6 +811,8 @@ ptot | panx | psad | pang | ppos
 * Anger: "deutschen" became less, more kämpfen
 * Sadness: bleiben, zu Hause, leben, Krise, Kinder
 * Positive:  bleiben, bleibt, gesund
+
+\newpage
 
 ### Spanish: Spain
 
@@ -909,17 +1067,85 @@ ptot | panx | psad | pang | ppos
 <!-- ``` -->
 
 
+```{r, spanish liwc terms, cache = TRUE}
+#adapt wordlist dfs for a table
+angb = make_df_for_tab(angerbasedf, "baseline")
+anxb = make_df_for_tab(anxbasedf, "baseline")
+sadb = make_df_for_tab(sadbasedf, "baseline")
+posb = make_df_for_tab(posbasedf, "baseline")
+ang = make_df_for_tab(angerdf, "outbreak")
+anx = make_df_for_tab(anxdf, "outbreak")
+sad = make_df_for_tab(saddf, "outbreak")
+pos = make_df_for_tab(posdf, "outbreak")
+
+#get and preprocess LIWC dictionaries
+#directory with the dictionary files
+dirdictionaries <- '~/Documents/dictionaries/'
+#load dictionaries and delete the *, because it means zero or more matches of the previous letter. $ at end of each liwc term without * searches only for words exactly ending like the liwc term 
+dictang <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'spanish2007_anger.txt'))$V1, "$"), "\\*\\$", "")
+dictanx <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'spanish2007_anx.txt'))$V1, "$"), "\\*\\$", "")
+dictsad <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'spanish2007_sad.txt'))$V1, "$"), "\\*\\$", "")
+dictpos <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'spanish2007_posemo.txt'))$V1, "$"), "\\*\\$", "")
+#add beginning character to each liwc term (otherwise book is matched with ok, for example)
+dictpos <- paste0("^", dictpos)
+#add escape character to smiley brackets and colon
+dictpos <- str_replace_all(dictpos, "\\(", "\\\\\\(")
+dictpos <- str_replace_all(dictpos, "\\)", "\\\\\\)")
+dictpos <- str_replace_all(dictpos, "\\:", "\\\\\\:")
+
+# filter out LIWC terms
+angbliwc =  angb %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxbliwc =  anxb %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadbliwc =  sadb %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posbliwc =  posb %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+angliwc =  ang %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxliwc =  anx %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadliwc =  sad %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posliwc =  pos %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+
+liwc = rbind(angbliwc, anxbliwc, sadbliwc, posbliwc, angliwc, anxliwc, sadliwc, posliwc) %>% 
+  mutate(Emotion = recode(Emotion, pos = "positive", anx = "anxiety", sad = "sadness", ang = "anger")) %>% 
+  relocate(c("Period", "Emotion"), .before="Term")
+
+liwc_esp = liwc
+```
+
+**Table S2.3. Frequency of LIWC terms among the 60 most frequent terms in Spain per time period and emotion.**
+
+```{r, out.width=0.5}
+knitr::kable(liwc,
+          digits = 2,
+          format="html",
+           table.attr = "style='width:50%;'") %>% 
+  kable_classic(full_width=T, position = "left",  font_size = 13) 
+```
+
+```{r}
+lowest_percent = round(range(c(min(anxb$Percent), min(anx$Percent), min(angb$Percent), min(ang$Percent), min(sadb$Percent), min(sad$Percent), min(posb$Percent), min(pos$Percent))),2)
+```
+
+
 **Observations**
 
 * In Spanish, the word "shame" (verguenza) seems to be an important term in the anxiety dictionary, both during baseline and post-covid outbreak.
 * The word government was used more often after the outbreak, in particular in anxiety and anger tweets.
 * The words house and state was generally used more often after the outbreak.
 
-*LIWC words*:
+*LIWC words*: 
+
+No LIWC term was present in more than `r round(max(liwc$Percent), digits = 2)`% of tweets expressing a particular emotion. Percentages for all LIWC terms not listed in Table S2.3. were below `r lowest_percent[1]` to `r lowest_percent[2]` (frequencies of the least frequent words that made it into the top 60 per dictionary and time period).
 
 * Anxiety: 
-    - baseline: falta (missing), estrés (stress), depresión
-    - outbreak: falta, estrés, miedo (fear), panico
+    - baseline: falta (missing), estrés (stress), depresión, shame (verguenza)
+    - outbreak: falta, estrés, miedo (fear), panico, shame (verguenza)
 * Sadness: daño (hurt)
 * Anger: ridículo (only baseline), coño, puta, mierda, mal
 * Positive: 
@@ -935,6 +1161,7 @@ ptot | panx | psad | pang | ppos
     - Anger: medidas (measures),  more protección, less partido (political party), salir (go out)
     - Positive: mequedoencasa, medidas, familia, equipo, animo (encouragement), abrazo
 
+\newpage
 
 ### Italian: Italy
 
@@ -1193,12 +1420,66 @@ ptot | panx | psad | pang | ppos
 <!-- newtot | newanx | newsad | newang |  newpos -->
 <!-- ``` -->
 
+```{r, italian liwc terms, cache = TRUE}
+#adapt wordlist dfs for a table
+angb = make_df_for_tab(angerbasedf, "baseline")
+anxb = make_df_for_tab(anxbasedf, "baseline")
+sadb = make_df_for_tab(sadbasedf, "baseline")
+posb = make_df_for_tab(posbasedf, "baseline")
+ang = make_df_for_tab(angerdf, "outbreak")
+anx = make_df_for_tab(anxdf, "outbreak")
+sad = make_df_for_tab(saddf, "outbreak")
+pos = make_df_for_tab(posdf, "outbreak")
+
+#get and preprocess LIWC dictionaries
+#directory with the dictionary files
+dirdictionaries <- '~/Documents/dictionaries/'
+
+#load dictionaries and delete the *, because it means zero or more matches of the previous letter. $ at end of each liwc term without * searches only for words exactly ending like the liwc term 
+dictang <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'italian2007_anger.txt'))$V1, "$"), "\\*\\$", "")
+dictanx <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'italian2007_anx.txt'))$V1, "$"), "\\*\\$", "")
+dictsad <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'italian2007_sad.txt'))$V1, "$"), "\\*\\$", "")
+dictpos <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'italian2007_posemo.txt'))$V1, "$"), "\\*\\$", "")
+#add beginning character to each liwc term (otherwise book is matched with ok, for example)
+dictpos <- paste0("^", dictpos)
+
+# filter out LIWC terms
+angbliwc =  angb %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxbliwc =  anxb %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadbliwc =  sadb %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posbliwc =  posb %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+angliwc =  ang %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxliwc =  anx %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadliwc =  sad %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posliwc =  pos %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+
+liwc = rbind(angbliwc, anxbliwc, sadbliwc, posbliwc, angliwc, anxliwc, sadliwc, posliwc) %>% 
+  mutate(Emotion = recode(Emotion, pos = "positive", anx = "anxiety", sad = "sadness", ang = "anger")) %>% 
+  relocate(c("Period", "Emotion"), .before="Term")
+
+liwc_ita = liwc
+
+#this is emty - no LIWC words among the most frequent. Report least frequent words per dictionary instead, all LIWC terms less than that.  
+```
+
+```{r}
+lowest_percent = round(range(c(min(anxb$Percent), min(anx$Percent), min(angb$Percent), min(ang$Percent), min(sadb$Percent), min(sad$Percent), min(posb$Percent), min(pos$Percent))),2)
+```
+
 
 **Observations**
 
 *LIWC words*: 
 
-* Positive: smiley, Buona, buon, Buongiorno (good/morning), bella/o
+The 60 most frequent terms do not contain any of the LIWC terms, so all percentages were below `r lowest_percent[1]` to `r lowest_percent[2]` (frequencies of the least frequent words that made it into the top 60 per dictionary and time period).
 
 *Topics*: 
 
@@ -1472,24 +1753,83 @@ ptot | panx | psad | pang | ppos
 <!-- ``` -->
 
 
+```{r, dutch liwc terms, cache = TRUE}
+#adapt wordlist dfs for a table
+angb = make_df_for_tab(angerbasedf, "baseline")
+anxb = make_df_for_tab(anxbasedf, "baseline")
+sadb = make_df_for_tab(sadbasedf, "baseline")
+posb = make_df_for_tab(posbasedf, "baseline")
+ang = make_df_for_tab(angerdf, "outbreak")
+anx = make_df_for_tab(anxdf, "outbreak")
+sad = make_df_for_tab(saddf, "outbreak")
+pos = make_df_for_tab(posdf, "outbreak")
+
+#get and preprocess LIWC dictionaries
+#directory with the dictionary files
+dirdictionaries <- '~/Documents/dictionaries/'
+#load dictionaries and delete the *, because it means zero or more matches of the previous letter. $ at end of each liwc term without * searches only for words exactly ending like the liwc term 
+dictang <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'dutch2007_anger.txt'))$V1, "$"), "\\*\\$", "")
+dictanx <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'dutch2007_anx.txt'))$V1, "$"), "\\*\\$", "")
+dictsad <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'dutch2007_sad.txt'))$V1, "$"), "\\*\\$", "")
+dictpos <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'dutch2007_posemo.txt'))$V1, "$"), "\\*\\$", "")
+#add beginning character to each liwc term (otherwise book is matched with ok, for example)
+dictpos <- paste0("^", dictpos)
+
+# filter out LIWC terms
+angbliwc =  angb %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxbliwc =  anxb %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadbliwc =  sadb %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posbliwc =  posb %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+angliwc =  ang %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxliwc =  anx %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadliwc =  sad %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posliwc =  pos %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+
+liwc = rbind(angbliwc, anxbliwc, sadbliwc, posbliwc, angliwc, anxliwc, sadliwc, posliwc) %>% 
+  mutate(Emotion = recode(Emotion, pos = "positive", anx = "anxiety", sad = "sadness", ang = "anger")) %>% 
+  relocate(c("Period", "Emotion"), .before="Term")
+
+liwc_ndl = liwc
+```
+
+    
+```{r}
+lowest_percent = round(range(c(min(anxb$Percent), min(anx$Percent), min(angb$Percent), min(ang$Percent), min(sadb$Percent), min(sad$Percent), min(posb$Percent), min(pos$Percent))),2)
+```
+
+
 **Observations**
 
-* In Dutch, the words "people" (especially), "all",  "time" (tijd) and "just" became more frequent during the outbreak
+* In Dutch, the words "people", "all",  "tijd" (time) and "just" became more frequent during the outbreak
 * The word "new year" became less frequent during the outbreak, simply because new years eve is not part of that time period, and Dutch Twitter apparently has a lot of new years wishes. The words new "nieuwe" and happy "gelukkig" are frequent as well. 
+
+*LIWC words*: 
+
+Only one LIWC term  ("ongemak") was frequent enough (`r round(liwc$Percent, 2)`%) to be among the 60 most frequent terms. All other LIWC terms had a percentage below `r lowest_percent[1]` to `r lowest_percent[2]` percentages for the least frequent of the 60 terms per  dictionary and time period). 
+
+Words that might indicate a problem: 
+
+* "Ongemak" frequently occurs in the phrase "Please apologize for the inconvenience", which does not seem like an expression of anxiety. Yet, this term only occurs in `r round(liwc$Percent, 2)`% of all anxiety tweets, and can thus not have a strong influence on total anxiety scores.
 
 *Topics*: 
 
 * Outbreak : coronavirus, thuis (at home), blijven (stay), nodig (necessary), elkaar (each other), sterkte (strength)
     - Anxiety: crisis, nodig (necessary), elkaar (each other)
     - Sad: Kinderen (kids)
-    
-*LIWC words*: 
 
-* Anxiety: zorgen, zorg (worries)
-* Positiv: gelukkik (happy), lekker (pretty, delicious), mooi (beautiful)
+    
 
 
 \newpage
+
 
 ### French: France
 
@@ -1748,31 +2088,91 @@ ptot | panx | psad | pang | ppos
 <!-- ``` -->
 
 
+```{r, French liwc terms, cache = TRUE}
+#adapt wordlist dfs for a table
+angb = make_df_for_tab(angerbasedf, "baseline")
+anxb = make_df_for_tab(anxbasedf, "baseline")
+sadb = make_df_for_tab(sadbasedf, "baseline")
+posb = make_df_for_tab(posbasedf, "baseline")
+ang = make_df_for_tab(angerdf, "outbreak")
+anx = make_df_for_tab(anxdf, "outbreak")
+sad = make_df_for_tab(saddf, "outbreak")
+pos = make_df_for_tab(posdf, "outbreak")
+
+#get and preprocess LIWC dictionaries
+#directory with the dictionary files
+dirdictionaries <- '~/Documents/dictionaries/'
+#load dictionaries and delete the *, because it means zero or more matches of the previous letter. $ at end of each liwc term without * searches only for words exactly ending like the liwc term 
+dictang <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'french2007_anger_no_noambiguous.txt'))$V1, "$"), "\\*\\$", "")
+#no words excluded in french anger, just stem* included for words for better overview rather than all declinations of words
+dictanx <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'french2007_anx.txt'))$V1, "$"), "\\*\\$", "")
+dictsad <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'french2007_sad.txt'))$V1, "$"), "\\*\\$", "")
+dictpos <-  str_replace_all(paste0(read.table(paste0(dirdictionaries, 'french2007_posemo.txt'))$V1, "$"), "\\*\\$", "")
+#add beginning character to each liwc term (otherwise book is matched with ok, for example)
+dictpos <- paste0("^", dictpos)
+
+# filter out LIWC terms
+angbliwc =  angb %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxbliwc =  anxb %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadbliwc =  sadb %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posbliwc =  posb %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+angliwc =  ang %>% 
+  filter(str_detect(Term, paste(dictang, collapse = "|")))
+anxliwc =  anx %>% 
+  filter(str_detect(Term, paste(dictanx, collapse = "|")))
+sadliwc =  sad %>% 
+  filter(str_detect(Term, paste(dictsad, collapse = "|")))
+posliwc =  pos %>% 
+  filter(str_detect(Term, paste(dictpos, collapse = "|")))
+
+liwc = rbind(angbliwc, anxbliwc, sadbliwc, posbliwc, angliwc, anxliwc, sadliwc, posliwc) %>% 
+  mutate(Emotion = recode(Emotion, pos = "positive", anx = "anxiety", sad = "sadness", ang = "anger")) %>% 
+  relocate(c("Period", "Emotion"), .before="Term")
+liwc_fr = liwc
+```
+
+**Table S2.4. Frequency of LIWC terms among the 60 most frequent terms in the France per time period and emotion.**
+
+```{r, out.width=0.5}
+knitr::kable(liwc,
+          digits = 2,
+          format="html",
+           table.attr = "style='width:50%;'") %>% 
+  kable_classic(full_width=T, position = "left", font_size = 13)
+```
+
+```{r}
+lowest_percent = round(range(c(min(anxb$Percent), min(anx$Percent), min(angb$Percent), min(ang$Percent), min(sadb$Percent), min(sad$Percent), min(posb$Percent), min(pos$Percent))),2)
+```
+
+
 **Observations**
 
 *LIWC words*: 
 
-* Anxiety: In French, "worried", "nervous/irritated", "hesitate", "lacher (give me a break, or letting go?)", "dérange" (disturb) are important words in the anxiety dictionary.
+No LIWC term was present in more than `r round(max(liwc$Percent), digits = 2)`% of tweets expressing a particular emotion.  Percentages for all LIWC terms not listed in Table S2.4. were below `r lowest_percent[1]` to `r lowest_percent[2]` (frequencies of the least frequent words that made it into the top 60 per dictionary and time period).
+
+* Anxiety: In French, inquiète (worried), énerve (nervous/irritated), hésite (hesitate), lâche/lâcher (give me a break, or letting go?), dérange (disturb) are important words in the anxiety dictionary.
     - Outbreak: worried is more frequent
-* Sadness: "Disappointed", "failure", "less" are important words in the sadness dictionary.
-    - Outbreak: more crying emojis, crisis, situation
-* Anger: "Hate" and "gros/grosse" (fat, serious, large), the swearword "gueule" are important in the angry dictionary.
-    - hate, death, mec, gros are slighly less during outbreak
-    - putain/ptn, gueule slighly more frequent during outbreak
-* Positive: nothing obvious, only general words
+* Sadness: mal (wrong/bad) and deçu (disappointed) (in both time periods), echec (failure) and  défaite (defeat) (only during baseline) are important words in the sadness dictionary
+* Anger: déteste (hate) and gros/grosse (fat, serious, large) are important in the angry dictionary. They are are slighly less frequent during outbreak than during baseline. 
+* Positive: no LIWC word among the most frequent
 
 *Topics*: 
     
-* Outbreak: "cas" (i.e. covid-19 cases), "days", "confinement", "coronavirus/virus", pleading face emoji, less "never", "life", laughing emoji
+* Outbreak: cas (i.e. covid-19 cases), days, confinement, coronavirus/virus, pleading face emoji, never, life, laughing emoji were less frequent
     - Anxiety: health (santé), crisis, macron, the situation, the government, the cause of the situations
-    - Sadness: pleading face emoji, mort (death)
+    - Sadness: pleading face emoji, mort (death), more crying emojis, crisis, situation
     - Anger: sortir (going outside)
     - Positive: pleading face emoji, less twinking emoji
 
 Words that might indicate a problem: 
 
-* McDo and Mcdonald in anxiety and positive tweets during the baseline, but without other terms that are part of French McDonald slogans("C'est tout ce que j'aime", "Venez comme vous êtes", ), and only in less than 1% of tweets. 
-
+* McDo and Mcdonald in anxiety and positive tweets during the baseline, but without other terms that are part of French McDonald  ("C'est tout ce que j'aime", "Venez comme vous êtes"), and only in less than 1% of tweets. 
 
 <!-- # Across all 6 countries -->
 
@@ -1782,7 +2182,7 @@ Words that might indicate a problem:
 <!-- * On average, words occur in `r median(alldf$freq)`% of tweets (median). -->
 <!-- * The most frequent word is `r alldf[which(alldf$freq > 11.9), "term"]` and it occurs in `r max(alldf$freq)`% of tweets -->
 
-___
+
 
 ## Discussion
 
@@ -1795,7 +2195,7 @@ Regarding the topics of conversations in which emotional expressions occured, wo
 Other topics that are more strongly linked to a particluar emotion are health, staying (at home), buying (of groceries), emergency, contagion and information for anxiety, as well as going out for sadness and anger, at home for sadness but also anxiety. The word (COVID-19) cases appears frequently in anxiety and sadness tweets in Spain, Italy, and France - which are all countries that the pandemic hit hard during the first outbreak period. Deaths are only mentioned in sadness tweets in France (otherwise also in French anger and Italian anxiety tweets). Altogether, topics in sadness tweets hint that changes to people's everyday life, rather than deaths, were a driving factor of increases in sadness terms. 
 
 
-___
+
 
 
 <!-- Case of Spain (for country comparisons): In the only country with a slight increase in anger, i.e. Spain, the terms government, state and measures rank high in anxiety and/or anger tweets, and anger tweets more often mention protection and going out. That these issues were often raised in a negative emotional context likely reflects that early pandemic-related decisions were made in a politically polarized context.  -->
