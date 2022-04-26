@@ -171,21 +171,31 @@ write.csv2(p_country, "output/TableS1_percentage_country.csv", row.names=F)
 
 \newpage
 
-## Table S2. Average proportions per time period across countries
+## Table S2. Average proportions per country for the baseline period
 
 ```{r}
-p_period <- dataperiods %>%
+dataperiods <- read.csv("AfterOutbreak-Weeks-5.csv")
+p_country_baseline <- dataperiods %>%
   mutate(country = dplyr::recode(country, BelgiumDutch="Belgium", CanadaEnglish="Canada", NewZealand ="New Zealand")) %>% 
-  mutate(Emotion = recode(wordlist, anger = "Anger", anxiety = "Anxiety", positive = "Positive", sadness = "Sadness")) %>% 
-  mutate(Period = recode(period, baseline = "Baseline", control = "Control")) %>% 
-  group_by(Emotion, Period) %>% 
+  mutate(Emotion = dplyr::recode(wordlist, anger = "Anger", anxiety = "Anxiety", positive = "Positive", sadness = "Sadness")) %>% 
+  mutate(period = dplyr::recode(period, "Week 1" = "Outbreak", "Week 2" = "Outbreak", "Week 3" = "Outbreak", "Week 4" = "Outbreak", "Week 5" = "Outbreak", baseline = "Baseline", control = "Control")) %>% 
+  rename(Country = country, Period = period) %>% 
+  group_by(Emotion, Country, Period) %>% 
   mutate(pr = emo_n/tot_n) %>% 
-  summarize("Mean %" = round(100*mean(pr),2), SD = round(100*sd(pr),2))
+  summarize("Mean %" = round(100*mean(pr),2)) %>% 
+  pivot_wider(names_from = c(Emotion, Period), values_from = "Mean %") %>% 
+  # relocate(c("Anger_Baseline", "Anger_Outbreak", "Positive_Baseline", "Positive_Outbreak"), .after = "Sadness_Outbreak")
+  relocate(c("Anger_Baseline",  "Anger_Control","Anger_Outbreak", "Positive_Baseline", "Positive_Control", "Positive_Outbreak"), .after = "Sadness_Outbreak") %>% 
+  ungroup()
 
-p_period
+p_country_baseline
 
-write.csv2(p_period, "output/TableS2_percentage_period.csv", row.names=F)
+# p_country_baseline %>%
+#   summarize_if(is.numeric, range) 
+
+write.csv(p_country_baseline, "output/TableS2_percentage_baseline__control_outbreak.csv", row.names=F)
 ```
+
 
 \newpage
 
@@ -993,7 +1003,16 @@ seldf <- cbind(seldf, data.frame(pos = 100*(all$pr[f]-all$bl[f])/all$bl[f],
                                  pos_low = 100*(all$low[f]-all$bl[f])/all$bl[f],
                                  pos_high = 100*(all$high[f]-all$bl[f])/all$bl[f]))
 
-meananx <- ggplot(data = seldf,aes(x=reorder(country, anx), y = anx)) +
+country_order = factor(c("UK", "Ireland",  "Canada", "USA","Australia", "New Zealand", 
+                   "Austria", "Germany","Switzerland",
+                   "Belgium", "Netherlands", "Italy","France",
+                   "Spain","Chile", "Ecuador", "Peru", "Mexico"))
+
+seldf = seldf %>% 
+  mutate(country = factor(country, levels = rev(country_order), labels = rev(country_order)))
+  
+
+meananx <- ggplot(data = seldf,aes(x=country, y = anx)) +
   geom_bar(stat = "identity",fill="orange", alpha=0.5, width=0.85)+
   geom_errorbar(aes(ymin = anx_low,ymax = anx_high), width=0.5, size=0.8, col="orange") +
   theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
@@ -1005,7 +1024,12 @@ meananx <- ggplot(data = seldf,aes(x=reorder(country, anx), y = anx)) +
                      breaks = seq(floor((min(seldf[,2:13]))), ceiling(max(seldf[,2:13])), by=10))+
   coord_flip()
 
-meanang <- ggplot(data = seldf,aes(x=reorder(country, ang), y = ang)) +
+
+# change label size for axise
+labelsize = 14
+
+# make plots
+meanang <- ggplot(data = seldf,aes(x=country, y = ang)) +
   geom_bar(stat = "identity", fill="red", alpha=0.5, width=0.85)+
   geom_errorbar(aes(ymin = ang_low,ymax = ang_high), width=0.5, size=0.8, col="red") +
   theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
@@ -1018,7 +1042,7 @@ meanang <- ggplot(data = seldf,aes(x=reorder(country, ang), y = ang)) +
   coord_flip()
 
 
-meansad <- ggplot(data = seldf,aes(x=reorder(country, sad), y = sad)) +
+meansad <- ggplot(data = seldf,aes(x=country, y = sad)) +
   geom_bar(stat = "identity", fill="blue", alpha=0.5, width=0.85)+
   geom_errorbar(aes(ymin = sad_low,ymax = sad_high), width=0.5, size=0.8, col="blue") +
   theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
@@ -1030,7 +1054,7 @@ meansad <- ggplot(data = seldf,aes(x=reorder(country, sad), y = sad)) +
                      breaks = seq(floor((min(seldf[,2:13]))), ceiling(max(seldf[,2:13])), by=10))+
   coord_flip()
 
-meanpos <- ggplot(data = seldf,aes(x=reorder(country, pos), y = pos)) +
+meanpos <- ggplot(data = seldf,aes(x=country, y = pos)) +
   geom_bar(stat = "identity", fill="cyan", alpha=0.25, width=0.85)+
   geom_errorbar(aes(ymin = pos_low,ymax = pos_high), width=0.5, size=0.8, col="cyan") +
   theme_bw()+ theme(text=element_text(size=axisfontsize), axis.text=element_text(size=labelsize), legend.title=element_blank(),
@@ -1046,7 +1070,7 @@ meanpos <- ggplot(data = seldf,aes(x=reorder(country, pos), y = pos)) +
 
 plotmeans <- cowplot::plot_grid(meananx, meansad, meanang, meanpos, labels=c("a", "b", "c", "d"), label_size=25, vjust = 1); plotmeans
 
-ggsave('figures/Figure2_meanchange_countriesR.pdf', width=9, height=8, dpi=300)
+ggsave('figures/Figure2_meanchange_countriesR.jpeg', width=12, height=10.3, dpi=300)
 ```
 
 
@@ -1114,7 +1138,7 @@ plotdf
 #           dv.labels = "P(Tweet contains anxiety-terms)",
 #           title = "Anxiety: Logistic regression with contrasts against baseline",
 #           pred.labels= c("Intercept", "Control", "Week 1", "Week 2", "Week 3", "Week 4", "Week5"),  file='output/TableS3_model_anxiety_week.doc')
-
+labelsize = 14
 coefanx <- ggplot(data=plotdf, aes(x=week, y=coefficient), position=position_dodge(width=1)) +
   geom_errorbar(aes(ymin=cilow, ymax=cihigh), width=0.3, colour="orange", size=1) +
   geom_bar(stat="identity", colour="orange", fill=scales::alpha("orange", 0.2), size=1) +
@@ -1346,11 +1370,11 @@ coefpos <- ggplot(data=plotdf, aes(x=week, y=coefficient), position=position_dod
 
 # Figure 3: Regression coefficients for each emotion and time period
 
-```{r, Figure 3 - 5 week model figure coefficients, fig.width=9, fig.height=8, warning=FALSE, cache=TRUE}
+```{r, Figure 3 - 5 week model figure coefficients, fig.width=12, fig.height=10.5, warning=FALSE, cache=TRUE}
 
-plotcoef <- cowplot::plot_grid(coefanx, coefsad, coefang, coefpos, labels=c("a", "b", "c", "d"), label_size=25, vjust = 1); plotcoef
+plotcoef <- cowplot::plot_grid(coefanx, coefsad, coefang, coefpos, labels=c("a", "b", "c", "d"), label_size=22, vjust = 1); plotcoef
 
-ggsave('figures/Figure3_coefficients_allemotions_5weeksR.pdf', width=9, height=8, dpi=300)
+ggsave('figures/Figure3_coefficients_allemotions_5weeksR.pdf', width=10, height=8, dpi=300)
 ```
 
 # 5 weeks after outbreak: Logistic regression with contrast against previous period
@@ -1655,12 +1679,19 @@ plotdf
 # Number of days with sustained levels above or below the baseline
 
 ```{r}
+country_order = factor(c("UK", "Ireland",  "Canada", "USA","Australia", "New Zealand", 
+                   "Austria", "Germany","Switzerland",
+                   "Belgium", "Netherlands", "Italy","France",
+                   "Spain","Chile", "Ecuador", "Mexico", "Peru"))
+
 #read data
 duration <- read.csv("data_main/Duration.csv")
 duration <-  duration %>%
   mutate(wordlist = factor(wordlist),
          separdate = relevel(factor(separdate), "Before"),
-         country = factor(country))
+         country = factor(country))%>% 
+  mutate(country = factor(country, levels = country_order, labels = country_order))#keep only time periods above or below zero, exclude those around zero
+
 # emotion labels to title case
 levels(duration$wordlist) = with(duration, stringr::str_to_title(levels(wordlist)))
 
@@ -1675,6 +1706,7 @@ lasting <- duration %>%
 
 
 ## Anxiety and Sadness in one plot
+
 ```{r,  duration anx sad, fig.width = 10, fig.height=5}
 dfdays=  subset(duration, wordlist=="Anxiety" | wordlist=="Sadness") %>%
   filter(!notzero=="zero") #keep only time periods above or below zero, exclude those around zero
@@ -1693,7 +1725,7 @@ ggplot()+
                     legend.position=c(0.38,0.88), legend.direction="vertical",#
                     panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 
-ggsave("figures/Figure5_ndays_anxiety_sadness_beyond1madR.pdf", width = 10, height=5)
+ggsave("figures/Figure6_ndays_anxiety_sadness_beyond1madR.pdf", width = 10, height=5)
 
 ```
 
@@ -1714,7 +1746,7 @@ ggplot()+
   scale_colour_manual(values=c("Before"="grey50", "After"="red"), name="", guide=guide_legend(title.position="right"), labels=c("After first case", "Before first case"))+
   theme_bw()+ theme(text=element_text(size=axisfontsize), strip.text=element_text(size=axisfontsize),#axis.text=element_text(size=10),
                     axis.text.x=element_text(angle=45, hjust=1), axis.title.x=element_blank(), #axis.ticks.x=element_blank(),
-                    legend.position=c(0.42,0.88), legend.direction="vertical",#
+                    legend.position=c(0.38,0.88), legend.direction="vertical",#
                     panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-ggsave("figures/FigureS4_ndays_angerpositive_beyond1madR.pdf", width = 10, height=5)
+ggsave("figures/FigureS7_ndays_angerpositive_beyond1madR.pdf", width = 10, height=5)
 ```
