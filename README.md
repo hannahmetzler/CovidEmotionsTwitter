@@ -3,6 +3,7 @@
 Code and data for the paper Collective emotions during the COVID-19 outbreak.
 
 Preprint here: https://psyarxiv.com/qejxv/
+Publication (behind paywall) here: https://psycnet.apa.org/record/2022-77709-001
 
 * Use *git clone https://github.com/hannahmetzler/CovidEmotionsTwitter.git* from your local Terminal to copy all code and data to your computer. 
 * Add empty folders called *figures* and *output*
